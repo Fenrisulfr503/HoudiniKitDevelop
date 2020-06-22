@@ -1,36 +1,8 @@
-/*
- * Copyright (c) 2020
- *	Side Effects Software Inc.  All rights reserved.
- *
- * Redistribution and use of Houdini Development Kit samples in source and
- * binary forms, with or without modification, are permitted provided that the
- * following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. The name of Side Effects Software may not be used to endorse or
- *    promote products derived from this software without specific prior
- *    written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE `AS IS' AND ANY EXPRESS
- * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *----------------------------------------------------------------------------
- * The Star SOP
- */
+
 
 #include "SOP_HFFastNoise.h"
 
-// This is an automatically generated header file based on theDsFile, below,
-// to provide SOP_StarParms, an easy way to access parameter values from
-// SOP_StarVerb::cook with the correct type.
+
 #include "SOP_HFFastNoise.proto.h"
 
 #include <GA/GA_SplittableRange.h>
@@ -54,20 +26,10 @@
 #include "FastNoiseSIMD/FastNoiseSIMD.h"
 using namespace Fenrisulfr;
 
-//
-// Help is stored in a "wiki" style text file.  This text file should be copied
-// to $HOUDINI_PATH/help/nodes/sop/star.txt
-//
-// See the sample_install.sh file for an example.
-//
 
-/// This is the internal name of the SOP type.
-/// It isn't allowed to be the same as any other SOP's type name.
 const UT_StringHolder SOP_HFFastNoise::theSOPTypeName("heightfield_fastnoise"_sh);
 
-/// newSopOperator is the hook that Houdini grabs from this dll
-/// and invokes to register the SOP.  In this case, we add ourselves
-/// to the specified operator table.
+
 void
 newSopOperator(OP_OperatorTable *table)
 {
@@ -85,8 +47,7 @@ newSopOperator(OP_OperatorTable *table)
     table->addOperator(op);
 }
 
-/// This is a multi-line raw string specifying the parameter interface
-/// for this SOP.
+
 static const char *theDsFile = R"THEDSFILE(
 {
     name        parameters
@@ -96,50 +57,82 @@ static const char *theDsFile = R"THEDSFILE(
         type    string
         default { "height" }
     }
-    parm {
-        name    "noisetype"
-        label   "Noise Type"
-        type    ordinal
-        default { "0" }
-        menu {
-            "perlin"   "Perlin"
-            "simple"   "Simple"
-            "value"    "Value"
-            "cell"     "Cell"
-        }
-    }
-	parm {
-        name    "seed"
-        label   "Random Seed"
-        type    int
-        default { "3456" }
-        range   { 1! 10000 }
-    }
-	parm {
-        name    "frequency"
-		cppname "Frequency"
-        label   "Noise Frequency"
-        type    float
-        default { "0.01" }
-        range   { 0! 1! }
-		export all
-    }
-    parm {
-        name    "position"
-        label   "Origin Position"
-        type    vector2
-        size    2          
-        default { "1" "0.3" } 
-
-		export all
-    }
-	group {
-		name    "file_folder"
-        label   "File"
+	groupsimple {
+		name	"general"
+		label	"General"
 		parm {
-			name  "file"
-			label "Geometry File"
-			type  file
+			name    "noisetype"
+			label   "Noise Type"
+			type    ordinal
+			default { "1" }
+			menu {        
+				"value"    "Value"
+				"perlin"   "Perlin"
+				"simple"   "Simple"
+				"cubic"    "Cubic"
+				"cellular" "Cellular"
+				}
+        }
+		parm {
+			name    "noiseseed"
+			cppname "NoiseSeed"
+			label   "Noise Seed"
+			type    integer
+			default { "1337" }
+			range   { 0! 10000000 }
+		}
+		parm {
+			name    "noisefrequency"
+			cppname "Frequency"
+			label   "Frequency"
+			type    float
+			default { "0.01" }
+			range   { 0! 1 }
+		}
+	}
+	groupsimple {
+		name	"fractal"
+		label	"Fractal"
+		disablewhen "{ noisetype == cellular }"
+		parm {
+			name    "fractaltype"
+			cppname "Fractaltype"
+			label   "Type"
+			type    ordinal
+			default { "1" }
+			menu {        
+				"none"			"None"
+				"fbm"			"FBM"
+				"billow"		"Billow"
+				"rigidmulti"    "Rigid Multi"
+				}
+        }
+		parm {
+			name    "octaves"
+			cppname "Octaves"
+			label   "Octaves"
+			type    integer
+			default { "3" }
+			range   { 0! 10 }
+			disablewhen "{ fractaltype == none }"
+		}
+		parm {
+			name    "lacunarity"
+			cppname "Lacunarity"
+			label   "Lacunarity"
+			type    float
+			default { "2.0" }
+			range   { 1! 5 }
+			disablewhen "{ fractaltype == none }"
+		}
+		parm {
+			name    "gain"
+			cppname "Gain"
+			label   "Gain"
+			type    float
+			default { "0.5" }
+			range   { 0! 1! }
+			disablewhen "{ fractaltype == none }"
 		}
 	}
 
@@ -165,9 +158,7 @@ public:
     virtual CookMode cookMode(const SOP_NodeParms *parms) const { return COOK_INPLACE; }
 
     virtual void cook(const CookParms &cookparms) const;
-    
-    /// This static data member automatically registers
-    /// this verb class at library load time.
+
     static const SOP_NodeVerb::Register<SOP_HFFastNoiseVerb> theVerb;
 
 	THREADED_METHOD1_CONST(SOP_HFFastNoiseVerb, true, bar,  UT_VoxelArrayF*, arr)
@@ -176,8 +167,7 @@ public:
 
 };
 
-// The static member variable definition has to be outside the class definition.
-// The declaration is inside the class.
+
 const SOP_NodeVerb::Register<SOP_HFFastNoiseVerb> SOP_HFFastNoiseVerb::theVerb;
 
 const SOP_NodeVerb *
@@ -194,12 +184,10 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, const UT_JobInfo &info) con
 
 	vit.setArray(arr);
 
-	// When we complete each tile the tile is tested to see if it can be
-	// compressed, ie, is now constant.  If so, it is compressed.
+
 	vit.setCompressOnExit(true);
 
-	// Restrict our iterator only over part of the range.  Using the
-	// info parameters means each thread gets its own subregion.
+
 	vit.setPartialRange(info.job(), info.numJobs());
 
 	UT_VoxelProbeF		probe;
@@ -216,7 +204,7 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, const UT_JobInfo &info) con
 }
 
 
-/// This is the function that does the actual work.
+
 void
 SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 {
@@ -224,7 +212,7 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     // My code in theres.
     auto &&sopparms = cookparms.parms<SOP_HFFastNoiseParms>();
     GU_Detail *detail = cookparms.gdh().gdpNC();
-
+	SOP_HFFastNoiseParms::Fractaltype fractaltype = sopparms.getFractaltype();
 	//using Noisetype = SOP_HFFastNoiseParms::Noisetype;
 
 	//Noisetype type = sopparms.getNoisetype();
@@ -274,9 +262,9 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 				// Save resolution
 				vol->getRes(resx, resy, resz);
 
-				float freq = sopparms.getFrequency();
+				//float freq = sopparms.getFrequency();
 
-				myNoise->SetFrequency(freq);
+				myNoise->SetFrequency(0.01);
 				float* noiseSet = myNoise->GetPerlinSet(0, 0, 0, resx, resy, 1);
 				UT_VoxelArrayWriteHandleF	handle = vol->getVoxelWriteHandle();
 				UT_VoxelArrayF *arr = &(*handle);
