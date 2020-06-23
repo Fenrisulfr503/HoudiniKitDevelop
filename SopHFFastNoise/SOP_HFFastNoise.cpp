@@ -135,7 +135,71 @@ static const char *theDsFile = R"THEDSFILE(
 			disablewhen "{ fractaltype == none }"
 		}
 	}
-
+	groupsimple {
+		name	"cellularp"
+		label	"Cellular"
+		hidewhen "{ noisetype != cellular }"
+		parm {
+			name	"return"
+			label   "Return Method"
+			type     ordinal
+			default { "1" }
+			menu {        
+				"cell"    "Cell Value"
+				"distance"   "Distance"
+				"distancet"   "Distance2"
+				"distancetadd"    "Distance2 Add"
+				"distancetsub" "Distance2 Sub"
+				"distancetmul" "Distance2 Mul"
+				"distancetdiv" "Distance2 Div"
+				"noiselookup"  "Noise Lookup"
+				"distancetcave" "Distance2 Cave"
+				}
+		}
+		parm {
+			name	"distancefunction"
+			label   "Distance Function"
+			type     ordinal
+			default { "0" }
+			menu {        
+				"euclidean"    "Euclidean"
+				"manhattan"	   "Manhattan"
+				"natural"      "Natural"
+				}
+		}
+		parm {
+			name    "distancetindicies"
+			label   "DistanceIndicies"
+			type    integer
+			default { "1" }
+			range   { 0! 3 }
+		}
+		parm {
+			name    "jitter"
+			label   "Jitter"
+			type    float
+			default { "0.5" }
+			range   { 0! 1 }
+		}
+		parm {
+			name	"noiselookuptype"
+			label   "Noise Lookup Type"
+			type     ordinal
+			default { "0" }
+			menu {        
+				"value"    "Value"
+				"simplex"	"Simplex"
+				"perlin"    "Perlin"
+				}
+		}
+		parm {
+			name    "noiselookupfreq"
+			label   "Noise Lookup Freq"
+			type    float
+			default { "0.5" }
+			range   { 0! 1! }
+		}
+	}
 }
 )THEDSFILE";
 
@@ -182,8 +246,10 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, const UT_JobInfo &info) con
 	UT_VoxelArrayIteratorF	vit;
 	UT_Interrupt		*boss = UTgetInterrupt();
 
-	vit.setArray(arr);
 
+
+
+	vit.setArray(arr);
 
 	vit.setCompressOnExit(true);
 
@@ -212,30 +278,17 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     // My code in theres.
     auto &&sopparms = cookparms.parms<SOP_HFFastNoiseParms>();
     GU_Detail *detail = cookparms.gdh().gdpNC();
+
+	// Noise Setups
+	SOP_HFFastNoiseParms::Noisetype noisetype =  sopparms.getNoisetype();
+	int64 noiseseed = sopparms.getNoiseSeed();
+	fpreal64 noisefreq = sopparms.getFrequency();
+
 	SOP_HFFastNoiseParms::Fractaltype fractaltype = sopparms.getFractaltype();
-	//using Noisetype = SOP_HFFastNoiseParms::Noisetype;
+	int64 fractaloctaves = sopparms.getOctaves();
+	fpreal64 fractallacunarity = sopparms.getLacunarity();
+	fpreal64 fractalgain = sopparms.getGain();
 
-	//Noisetype type = sopparms.getNoisetype();
-
-	//if (type == Noisetype::PERLIN)
-	//{
-	//	std::cout << "Noise Type is :: Perlin.\n";
-	//}
-	//if (type == Noisetype::CELL)
-	//{
-	//	std::cout << "Noise Type is :: Cell.\n";
-	//}
-	//if (type == Noisetype::VALUE)
-	//{
-	//	std::cout << "Noise Type is :: Value.\n";
-	//}
-	//if (type == Noisetype::SIMPLE)
-	//{
-	//	std::cout << "Noise Type is :: Simple.\n";
-	//}
-
-	//float freq = sopparms.getFrequency();
-	
 	GA_ROHandleS attrib(detail->findPrimitiveAttribute("name"));
 	UT_StringHolder name;
 	GEO_Primitive *prim;
@@ -264,8 +317,95 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
 				//float freq = sopparms.getFrequency();
 
-				myNoise->SetFrequency(0.01);
-				float* noiseSet = myNoise->GetPerlinSet(0, 0, 0, resx, resy, 1);
+				myNoise->SetFrequency(noisefreq);
+				myNoise->SetSeed(noiseseed);
+
+				// Set Fractal Parm
+				
+				switch (fractaltype)
+				{
+					case SOP_HFFastNoiseParms::Fractaltype::FBM :
+					{
+						myNoise->SetFractalType(FastNoiseSIMD::FBM);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Fractaltype::BILLOW:
+					{
+						myNoise->SetFractalType(FastNoiseSIMD::Billow);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Fractaltype::RIGIDMULTI:
+					{
+						myNoise->SetFractalType(FastNoiseSIMD::RigidMulti);
+						break;
+					}
+
+					default:
+						break;
+				}
+
+				myNoise->SetFractalOctaves(fractaloctaves);
+				myNoise->SetFractalLacunarity(fractallacunarity);
+				myNoise->SetFractalGain(fractalgain);
+
+				
+				float* noiseSet;
+
+
+
+				
+
+				switch (noisetype)
+				{
+					case SOP_HFFastNoiseParms::Noisetype::VALUE : 
+					{
+						if(fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
+							noiseSet = myNoise->GetValueFractalSet(0, 0, 0, resx, resy, 1);
+						else
+							noiseSet = myNoise->GetValueSet(0, 0, 0, resx, resy, 1);
+
+						break;
+					}
+
+					case SOP_HFFastNoiseParms::Noisetype::PERLIN :
+					{
+						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
+							noiseSet = myNoise->GetPerlinFractalSet(0, 0, 0, resx, resy, 1);
+						else
+							noiseSet = myNoise->GetPerlinSet(0, 0, 0, resx, resy, 1);
+						break;
+					}
+
+					case SOP_HFFastNoiseParms::Noisetype::SIMPLE :
+					{
+						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
+							noiseSet = myNoise->GetSimplexFractalSet(0, 0, 0, resx, resy, 1);
+						else
+							noiseSet = myNoise->GetSimplexSet(0, 0, 0, resx, resy, 1);
+
+						break;
+					}
+
+					case SOP_HFFastNoiseParms::Noisetype::CUBIC :
+					{
+						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
+							noiseSet = myNoise->GetCubicFractalSet(0, 0, 0, resx, resy, 1);
+						else
+							noiseSet = myNoise->GetCubicSet(0, 0, 0, resx, resy, 1);
+
+						break;
+					}
+
+					case SOP_HFFastNoiseParms::Noisetype::CELLULAR:
+					{
+						noiseSet = myNoise->GetCellularSet(0, 0, 0, resx, resy, 1);
+						break;
+					}
+
+					default:
+						break;
+				}
+
 				UT_VoxelArrayWriteHandleF	handle = vol->getVoxelWriteHandle();
 				UT_VoxelArrayF *arr = &(*handle);
 				
