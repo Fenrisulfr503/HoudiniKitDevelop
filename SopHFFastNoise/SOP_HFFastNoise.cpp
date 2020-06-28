@@ -289,6 +289,10 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	fpreal64 fractallacunarity = sopparms.getLacunarity();
 	fpreal64 fractalgain = sopparms.getGain();
 
+	// Cell Noise Setup Parmaters
+	SOP_HFFastNoiseParms::Return return_method = sopparms.getReturn();
+	SOP_HFFastNoiseParms::Distancefunction dist_func = sopparms.getDistancefunction();
+
 	GA_ROHandleS attrib(detail->findPrimitiveAttribute("name"));
 	UT_StringHolder name;
 	GEO_Primitive *prim;
@@ -348,12 +352,76 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 				myNoise->SetFractalLacunarity(fractallacunarity);
 				myNoise->SetFractalGain(fractalgain);
 
-				
+				// Set Cell Noise Method
+				switch (return_method)
+				{
+					case SOP_HFFastNoiseParms::Return::CELL:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::CellValue);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCE:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCET:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCETADD:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Add);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCETCAVE:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Cave);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCETMUL:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Mul);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCETDIV:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Div);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Return::DISTANCETSUB:
+					{
+						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Sub);
+						break;
+					}
+
+					default:
+						break;
+				}
+				// Set Cell Distance Functionn
+				switch (dist_func)
+				{
+					case SOP_HFFastNoiseParms::Distancefunction::EUCLIDEAN :
+					{
+						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Euclidean);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Distancefunction::NATURAL:
+					{
+						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Natural);
+						break;
+					}
+					case SOP_HFFastNoiseParms::Distancefunction::MANHATTAN:
+					{
+						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Manhattan);
+						break;
+					}
+					default:
+						break;
+				}
+
 				float* noiseSet;
-
-
-
-				
 
 				switch (noisetype)
 				{
