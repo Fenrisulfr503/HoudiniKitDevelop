@@ -51,6 +51,7 @@
 #include <GA/GA_Attribute.h>
 #include <UT/UT_FastRandom.h>
 #include <UT/UT_Math.h>
+#include <GU/GU_PrimVolume.h>
 using namespace HDK_Sample;
 
 //
@@ -75,8 +76,8 @@ newSopOperator(OP_OperatorTable *table)
         "PoissonDisc",                     // UI name
         SOP_PoissionDiscSample::myConstructor,    // How to build the SOP
         SOP_PoissionDiscSample::buildTemplates(), // My parameters
-        0,                          // Min # of sources
-        0,                          // Max # of sources
+        1,                          // Min # of sources
+        1,                          // Max # of sources
         nullptr,                    // Custom local variables (none)
         OP_FLAG_GENERATOR));        // Flag it as generator
 }
@@ -146,11 +147,52 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     // My code in theres.
     auto &&sopparms {cookparms.parms<SOP_PoissionDiscSampleParms>()} ;
     GU_Detail *detail {cookparms.gdh().gdpNC()} ;
-	// const GEO_Detail *const firstInput {cookparms.inputGeo(0)} ;
-    exint width  = sopparms.getSize().x();
-    exint height = sopparms.getSize().y();
-    float minDistance = sopparms.getMindist();
+	const GEO_Detail *const firstInput {cookparms.inputGeo(0)} ;
 
+
+    const GEO_Primitive *prim;
+    GA_ROHandleS attrib(firstInput->findPrimitiveAttribute("name"));
+    UT_String name;
+    UT_Vector3 min;
+    int resx, resy, resz;
+    GA_FOR_ALL_PRIMITIVES(firstInput, prim)
+    {
+        if (prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+        {
+            if (attrib.isValid())
+            {
+                name = attrib.get(prim->getMapOffset());
+            }
+           
+            if(name == "mask")
+            {
+                const GEO_PrimVolume *vol = (GEO_PrimVolume *) prim;
+                vol->getRes(resx, resy, resz);
+
+                UT_Vector3 p1, p2;
+                vol->indexToPos(0, 0, 0, p1);
+	            vol->indexToPos(1, 0, 0, p2);
+                resx *=(p1 - p2).length();
+                resy *=(p1 - p2).length();
+                resz *=(p1 - p2).length();
+
+                
+                UT_BoundingBox* bbox = new UT_BoundingBox{};
+                vol->getBBox(bbox);
+                min =  bbox->minvec();
+                min[1] = 0;
+                delete bbox;
+
+            }
+        }
+    }
+
+    // exint width  = sopparms.getSize().x();
+    // exint height = sopparms.getSize().y();
+    exint width = resx;
+    exint height = resy;
+
+    float minDistance = sopparms.getMindist();
 
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
@@ -299,7 +341,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         UT_Vector3 pos{sampleList[i][0], 0, sampleList[i][1]};
 
         GA_Offset offset= detail->pointOffset(i);
-        detail->setPos3(offset, pos );
+        detail->setPos3(offset, pos + min);
     }
     
     detail->bumpAllDataIds();
