@@ -155,6 +155,10 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     UT_String name;
     UT_Vector3 min;
     int resx, resy, resz;
+    float volMinValue = 5;
+    float volMaxValue = 25;
+    const GEO_PrimVolume *vol;
+
     GA_FOR_ALL_PRIMITIVES(firstInput, prim)
     {
         if (prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
@@ -166,9 +170,10 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
            
             if(name == "mask")
             {
-                const GEO_PrimVolume *vol = (GEO_PrimVolume *) prim;
+                vol = (GEO_PrimVolume *) prim;
                 vol->getRes(resx, resy, resz);
-
+                //volMinValue = vol->calcMinimum();
+                //volMaxValue = vol->calcMaximum();
                 UT_Vector3 p1, p2;
                 vol->indexToPos(0, 0, 0, p1);
 	            vol->indexToPos(1, 0, 0, p2);
@@ -187,51 +192,65 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         }
     }
 
-    // exint width  = sopparms.getSize().x();
+    //exint loopIndex  = sopparms.getSize().x();
     // exint height = sopparms.getSize().y();
     exint width = resx;
     exint height = resy;
 
-    float minDistance = sopparms.getMindist();
+    // float minDistance = sopparms.getMindist();
+    float minDistance = volMaxValue;
 
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
         return;
+    
+    //volMaxValue
+    float cellSize  = volMaxValue / sqrt(2) ;
 
-    float cellSize  = minDistance / sqrt(2) ;
+    exint gridwidth  {int(width / cellSize) + 1} ;
+    exint gridheight {int(height / cellSize) + 1} ;
 
-    exint gridwidth  {int(ceil(width / cellSize))} ;
-    exint gridheight {int(ceil(height / cellSize))} ;
+    if(gridheight <5 || gridwidth < 5)
+    {
+        return;
+    }
 
     exint sampleCounts {36};
 
     // init Grid Arrays
-    UT_Array<UT_IntArray> grid;
+    
+    using GridArray = UT_Array<UT_Array<UT_IntArray>>;
+    GridArray grid;
     grid.setSize(gridheight);
     for(auto &gridx : grid)
     {
         gridx.setSize(gridwidth);
     }
 
-    for(auto &gridx : grid)
-    {
-        for(auto &item : gridx)
-        {
-            item = -1;
-        }
-    }
+    // for(auto &gridx : grid)
+    // {
+    //     for(auto &item : gridx)
+    //     {
+    //         item = -1;
+    //     }
+    // }
 
     UT_IntArray processList{};
     UT_Array<UT_Vector2> sampleList{};
- 
+    UT_Array<float> pscaleAttrib{};
     uint initSeed1 = 1984;
     uint initSeed2 = 1995;
     UT_Vector2 firstPoint{ UTrandom(initSeed1) * width, UTrandom(initSeed2) * height };
+    UT_Vector3 samplePoint3(firstPoint[0], 0, firstPoint[1]);
+
+    float grey = vol->getValue( samplePoint3 + min);
+    minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
 
     exint SamplelistIndex = sampleList.append(firstPoint);
     processList.append(SamplelistIndex);
+    pscaleAttrib.append(minDistance);
 
-    grid[int(firstPoint[1] / cellSize)][int(firstPoint[0] / cellSize)] = SamplelistIndex;
+    grid[int(firstPoint[1] / cellSize)][int(firstPoint[0] / cellSize)].append(SamplelistIndex) ;
     
     //Vire First Point
     // std::cout << firstPoint << std::endl;
@@ -251,7 +270,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         uint i2 = point[1] * 1995 + 775 + id ;
         float r1 {UTrandom(i1)};
         float r2 {UTrandom(i2)};
-
         float radius {mindist * (r1 + 1)} ;
         float angle  = 2 * 3.1415 * r2 ;
 
@@ -261,33 +279,47 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     };
 
-    auto IsVail = [ &width, &height, &gridwidth, &gridheight]( UT_Array<UT_Vector2>& sampleList, UT_Array<UT_IntArray>& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
+    auto IsVaild = [ &width, &height, &gridwidth, &gridheight]( UT_Array<UT_Vector2>& sampleList, GridArray& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
     {
         if(point[0] >=0 && point[0] <= width && point[1] >= 0 && point[1]<=height)
         {
             exint indexWidth  = int(point[0] / cellSize );
             exint indexHeight = int(point[1] / cellSize );
 
-            indexWidth  = UTclamp(int(indexWidth), 2, int(gridwidth - 3)) ;
-            indexHeight  = UTclamp(int(indexHeight), 2, int(gridheight - 3)) ;
-
-            for (int h = -2; h < 3; h++)
+            indexWidth  = UTclamp(int(indexWidth), 3, int(gridwidth - 4)) ;
+            indexHeight  = UTclamp(int(indexHeight), 3, int(gridheight - 4)) ;
+            int index = -1;
+            for (int h = -3; h < 4; h++)
             {
-                for (int w = -2; w < 3; w++)
+                for (int w = -3; w < 4; w++)
                 {
-                    int index { grid[indexHeight + h][indexWidth+w] };
                     
-                    if(index > -1 )
+                    auto& indexArr = grid[indexHeight + h][indexWidth+w] ;
+                    
+                    for(auto ptindex : indexArr)
                     {
-                        UT_Vector2 pt {sampleList[index]};
-                        if( point.distance(pt) < mindist)
+                        if(ptindex > -1)
                         {
-                            return false;
+                            if( point.distance( sampleList[ptindex] ) < mindist)
+                            {
+                                return false;
+                            }
                         }
                     }
                     
                 }
             }
+
+            // if(index > -1) 
+            // {
+            //     UT_Vector2 ptTemp {sampleList[index]};
+            //     //std::cout << "Index is : " << index << std::endl;
+            //     std::cout << "Source Point : " << point << std::endl;
+            //     std::cout << "Grid Point : " << ptTemp << std::endl;
+            //     std::cout << "This Point Will Add : " << distance2d(point, ptTemp) << std::endl;
+            // }        
+
+            
             return true;
         }
         else
@@ -307,44 +339,66 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     while ( !processList.isEmpty())
     {
+    // for (size_t i = 0; i < 10; i++)
+    // {
+
+
+    
         int precessIndex { processList[processList.size() - 1] } ;
         processList.removeLast();
         for (size_t i = 0; i < sampleCounts; i++)
         {
             UT_Vector2 point {sampleList[precessIndex]} ;
+            
             UT_Vector2 newPoint {GeneratPoint(point, minDistance, i)};
-            if(IsVail(sampleList, grid, newPoint, minDistance, cellSize))
+            UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
+
+            float grey = vol->getValue( samplePoint3 + min);
+            minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
+
+            if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
                 SamplelistIndex = sampleList.append(newPoint);
                 processList.append(SamplelistIndex);
-                grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)] = SamplelistIndex;
+                pscaleAttrib.append(minDistance);
+                grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)].append(SamplelistIndex) ;
             }
         }
     }
 
-    exint pointNumbers { sampleList.size()};
 
+    exint pointNumbers { sampleList.size()};
+    GA_RWHandleF pscaleValueHandle;
+    GA_Attribute* pointDistanceAttr; 
+                
     if(detail->getNumPoints() != pointNumbers)
     {
         detail->clearAndDestroy();
         detail->appendPointBlock(pointNumbers);
+        pointDistanceAttr = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1); 
         detail->bumpDataIdsForAddOrRemove(true, true, true);
 
     }else
     {
         detail->getP()->bumpDataId();
+        pointDistanceAttr = detail->findPointAttribute("pscale");
     }
 
-    
+    pscaleValueHandle.bind(pointDistanceAttr);
+
+
     for (size_t i = 0; i < pointNumbers; i++)
     {
         UT_Vector3 pos{sampleList[i][0], 0, sampleList[i][1]};
 
         GA_Offset offset= detail->pointOffset(i);
         detail->setPos3(offset, pos + min);
+        pscaleValueHandle.set(offset, pscaleAttrib[i]);
     }
     
     detail->bumpAllDataIds();
+
+
 
     // Ceck for Sample List
     // for(auto & p : sampleList)
