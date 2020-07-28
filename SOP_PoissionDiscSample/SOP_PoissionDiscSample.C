@@ -93,6 +93,7 @@ static const char *theDsFile = R"THEDSFILE(
         type    vector
         size    2           // 2 components in a vector2
         default { "100" "100" } // Outside and inside radius defaults
+
     }
     parm {
         name    "mindist"      
@@ -101,13 +102,83 @@ static const char *theDsFile = R"THEDSFILE(
         default { "2" }     
         range   { 0.25! 20 }   
     }
+    parm {
+        name    "mybutton"
+        label   "My Button"
+        type    button
+    }
+
+    parm {
+        name    "direct"
+        label   "Direct"
+        type    direction
+        size    3
+        default { "0" "0" "0" }
+        range   { 0 1 }
+    }
+    
+    parm {
+        name    "ramp"
+        label   "Ramp"
+        type    rgbamask
+        default { "15" }
+    }
+    parm {
+        name    "ramprgb"
+        label   "RampRgb"
+        type    ramp_rgb
+        default { "2" }
+        range   { 1! 10 }
+
+    }
+    parm {
+        name    "gridsize"
+        label   "Grid Size"
+        type    intvector2
+        size    2
+        default { "5" "5" }
+        range   { 0 1000 }
+
+    }
+    parm {
+        name    "sepparm"
+        label   "Separator"
+        type    separator
+        default { "" }
+    }
 }
 )THEDSFILE";
+
+int func(void *data, int index, fpreal64 time,
+				  const PRM_Template *tplate)
+{
+    std::cout << "test for button\n" ;
+    std::cout << time << std::endl; 
+    return 1;
+}
+
 
 PRM_Template*
 SOP_PoissionDiscSample::buildTemplates()
 {
     static PRM_TemplateBuilder templ("SOP_PoissionDiscSample.C"_sh, theDsFile);
+    std::cout << templ.templateLength() << std::endl;
+
+    auto prmPtr = templ.templates();
+    for(int i = 0; i < templ.templateLength(); ++i)
+    {
+        
+        // std::cout << prmPtr->getLabel() << std::endl;
+        if(UT_StringHolder(prmPtr->getLabel()) == UT_StringHolder("My Button"))
+        {
+            std::cout << "I got my button ui. \n";
+
+            
+            prmPtr->setCallback(PRM_Callback(func));
+        }
+        prmPtr++;
+
+    }
     return templ.templates();
 }
 
@@ -148,8 +219,8 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     auto &&sopparms {cookparms.parms<SOP_PoissionDiscSampleParms>()} ;
     GU_Detail *detail {cookparms.gdh().gdpNC()} ;
 	const GEO_Detail *const firstInput {cookparms.inputGeo(0)} ;
-
-
+  
+    
     const GEO_Primitive *prim;
     GA_ROHandleS attrib(firstInput->findPrimitiveAttribute("name"));
     UT_String name;

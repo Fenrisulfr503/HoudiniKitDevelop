@@ -144,8 +144,14 @@ SOP_SampleVolumeValVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             {
                 std::cout << "Start Get Volume Values." << std::endl;
                 const GEO_PrimVolume *vol = (GEO_PrimVolume *) prim;
-                const GA_Range& pointRange = detail->getPointRange();
 
+                float minValue = vol->calcMinimum();
+                float maxValue = vol->calcMaximum();
+                std::cout << "Volume min value : "  << minValue << std::endl;
+                std::cout << "Volume max value : "  << maxValue << std::endl;
+
+                const GA_Range& pointRange = detail->getPointRange();
+                
                 GA_RWHandleF sampleValueHandle;
                 GA_Attribute* pointDistanceAttr = detail->addFloatTuple(GA_ATTRIB_POINT, "sample_value", 1); 
                 sampleValueHandle.bind(pointDistanceAttr);
