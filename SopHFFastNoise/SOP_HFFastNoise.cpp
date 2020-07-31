@@ -311,8 +311,8 @@ public:
 
     static const SOP_NodeVerb::Register<SOP_HFFastNoiseVerb> theVerb;
 
-	THREADED_METHOD5_CONST(SOP_HFFastNoiseVerb, true, bar,  UT_VoxelArrayF*, arr, float*, noiseSet,fpreal64, noiseScale, int, resy, SOP_HFFastNoiseParms::Mode, myMode)
-	void  barPartial( UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const;
+	THREADED_METHOD6_CONST(SOP_HFFastNoiseVerb, true, bar,  UT_VoxelArrayF*, arr, float*, noiseSet,fpreal64, noiseScale, int, resx, int, resy, SOP_HFFastNoiseParms::Mode, myMode)
+	void  barPartial( UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resx, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const;
 
 
 };
@@ -327,7 +327,7 @@ SOP_HFFastNoise::cookVerb() const
 }
 
 void 
-SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const
+SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resx, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const
 {
 	UT_VoxelArrayIteratorF	vit;
 	UT_Interrupt		*boss = UTgetInterrupt();
@@ -343,7 +343,7 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 n
 		if (vit.isStartOfTile() && boss->opInterrupt())
 			break;
 /*		probe.setIndex(vit);*/
-		float val = noiseSet[vit.x() * resy + vit.y()] * noiseScale;
+		float val = noiseSet[ resx * resy * vit.z() + vit.x() * resy  + vit.y()] * noiseScale;
 
 		switch (myMode)
 		{
@@ -604,8 +604,13 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		GEO_PrimVolume *vol = (GEO_PrimVolume *)maskPrim;
 
 		int resx, resy, resz;
+		UT_Vector3 p1, p2;
 		vol->getRes(resx, resy, resz);
+		vol->indexToPos(0, 0, 0, p1);
+		vol->indexToPos(1, 0, 0, p2);
 
+		float voxelLength = (p1 - p2).length();
+		UT_Vector3 center{ detail->getPos3(vol->getPointOffset(0))  };
 		//std::cout << "Res : " << resx << " " << resy << " " << resz << "\n";
 
 			// Noise Parameters
@@ -667,13 +672,16 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		myNoise->SetPerturbFractalGain(turbGain);
 		myNoise->SetPerturbNormaliseLength(turbNormalLength);
 
+		//Set Axi Scale
+		myNoise->SetAxisScales(voxelLength, voxelLength, voxelLength);
+
 		float* noiseSet;
-		noiseSet = myNoise->GetNoiseSet(0, 0, 0, resx, resy, 1);
+		noiseSet = myNoise->GetNoiseSet(center.x(), center.y(), center.z(), resx, resy, resz);
 
 		UT_VoxelArrayWriteHandleF	handle = vol->getVoxelWriteHandle();
 		UT_VoxelArrayF *arr = &(*handle);
 
-		bar(arr, noiseSet, noiseScale, resy, myMode);
+		bar(arr, noiseSet, noiseScale, resx,resy, myMode);
 // 		UT_VoxelArrayIteratorF	vit;
 // 		vit.setArray(arr);
 // 		for (vit.rewind(); !vit.atEnd(); vit.advance())
