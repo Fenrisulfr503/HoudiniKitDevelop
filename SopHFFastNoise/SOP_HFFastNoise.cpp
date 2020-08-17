@@ -101,6 +101,14 @@ static const char *theDsFile = R"THEDSFILE(
         range   { 1 1000 }
     }
     parm {
+        name    "offset"
+        label   "Offset"
+        type    vector
+        size    3
+        default { "0" "0" "0" }
+        range   { 0 5000 }
+    }
+    parm {
         name    "noise_scale"
         label   "Noise Scale"
         type    float
@@ -311,8 +319,8 @@ public:
 
     static const SOP_NodeVerb::Register<SOP_HFFastNoiseVerb> theVerb;
 
-	THREADED_METHOD6_CONST(SOP_HFFastNoiseVerb, true, bar,  UT_VoxelArrayF*, arr, float*, noiseSet,fpreal64, noiseScale, int, resx, int, resy, SOP_HFFastNoiseParms::Mode, myMode)
-	void  barPartial( UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resx, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const;
+	THREADED_METHOD6_CONST(SOP_HFFastNoiseVerb, true, bar,  UT_VoxelArrayF*, arr, float*, noiseSet,fpreal64, noiseScale, int, resy, int, resz, SOP_HFFastNoiseParms::Mode, myMode)
+	void  barPartial( UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resy, int resz, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const;
 
 
 };
@@ -327,7 +335,7 @@ SOP_HFFastNoise::cookVerb() const
 }
 
 void 
-SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resx, int resy, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const
+SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 noiseScale, int resy, int resz, SOP_HFFastNoiseParms::Mode myMode,const UT_JobInfo &info)const
 {
 	UT_VoxelArrayIteratorF	vit;
 	UT_Interrupt		*boss = UTgetInterrupt();
@@ -343,7 +351,8 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 n
 		if (vit.isStartOfTile() && boss->opInterrupt())
 			break;
 /*		probe.setIndex(vit);*/
-		float val = noiseSet[ resx * resy * vit.z() + vit.x() * resy  + vit.y()] * noiseScale;
+/*		std::cout << "Volume index " << vit.x() * resy * resz + vit.y() * resz + vit.z() << std::endl;*/
+		float val = noiseSet[ vit.x() * resy * resz + vit.y() * resz + vit.z()] * noiseScale;
 
 		switch (myMode)
 		{
@@ -592,7 +601,7 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	SOP_HFFastNoiseParms::Mode myMode{ sopparms.getMode() };
 	UT_StringHolder sourceLayer{ sopparms.getBind_layer() };
 	fpreal64 noiseScale{ sopparms.getNoise_scale() };
-
+	UT_Vector3 offset{ sopparms.getOffset() * -1};
 	GEO_Primitive* maskPrim = detail->findPrimitiveByName(sourceLayer);
 
 	if (maskPrim == nullptr)
@@ -609,11 +618,14 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		vol->indexToPos(0, 0, 0, p1);
 		vol->indexToPos(1, 0, 0, p2);
 
-		float voxelLength = (p1 - p2).length();
-		UT_Vector3 center{ detail->getPos3(vol->getPointOffset(0))  };
-		//std::cout << "Res : " << resx << " " << resy << " " << resz << "\n";
 
-			// Noise Parameters
+		float voxelLength = (p1 - p2).length();
+		UT_Vector3 center{ detail->getPos3(vol->getPointOffset(0)) + offset };
+
+// 		std::cout << "Volume Res : " << resx << " " << resy << " " << resz << std::endl;
+// 		std::cout << "Voxel Length " << voxelLength << std::endl;
+
+		// Noise Parameters
 		SOP_HFFastNoiseParms::Noise_type noiseType{ sopparms.getNoise_type() };
 		int64 seed{ sopparms.getSeed() };
 		fpreal64 size{ sopparms.getSize() };
@@ -681,247 +693,10 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		UT_VoxelArrayWriteHandleF	handle = vol->getVoxelWriteHandle();
 		UT_VoxelArrayF *arr = &(*handle);
 
-		bar(arr, noiseSet, noiseScale, resx,resy, myMode);
-// 		UT_VoxelArrayIteratorF	vit;
-// 		vit.setArray(arr);
-// 		for (vit.rewind(); !vit.atEnd(); vit.advance())
-// 		{
-// 			int x = vit.x();
-// 			int y = vit.y();
-// 			int z = vit.z();
-// 
-// 			//std::cout << x << " " << y << " " << z << "   " << x * (y + 1) + y << std::endl;
-// 
-// 			vit.setValue(noiseSet[x * resy + y] * noiseScale);
-// 		}
-
+		bar(arr, noiseSet, noiseScale, resy, resz, myMode);
 
 		FastNoiseSIMD::FreeNoiseSet(noiseSet);
 
-
 	}
-
-	
-
-
-// 	// Noise Setups
-// 	SOP_HFFastNoiseParms::Noisetype noisetype =  sopparms.getNoisetype();
-// 	int64 noiseseed = sopparms.getNoiseSeed();
-// 	fpreal64 noisefreq = sopparms.getFrequency();
-// 
-// 	SOP_HFFastNoiseParms::Fractaltype fractaltype = sopparms.getFractaltype();
-// 	int64 fractaloctaves = sopparms.getOctaves();
-// 	fpreal64 fractallacunarity = sopparms.getLacunarity();
-// 	fpreal64 fractalgain = sopparms.getGain();
-// 
-// 	// Cell Noise Setup Parmaters
-// 	SOP_HFFastNoiseParms::Return return_method = sopparms.getReturn();
-// 	SOP_HFFastNoiseParms::Distancefunction dist_func = sopparms.getDistancefunction();
-// 
-// 	GA_ROHandleS attrib(detail->findPrimitiveAttribute("name"));
-// 	UT_StringHolder name;
-// 	GEO_Primitive *prim;
-// 	
-// 	UT_VoxelArrayF voxl;
-// 	
-// 	FastNoiseSIMD* myNoise = FastNoiseSIMD::NewFastNoiseSIMD();
-// 	
-// 	GA_FOR_ALL_PRIMITIVES(detail, prim)
-// 	{
-// 		if (prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-// 		{
-// 			if (attrib.isValid())
-// 			{
-// 				name = attrib.get(prim->getMapOffset());
-// 			}
-// 
-// 			if (name == UT_StringHolder("height"))
-// 			{
-// 				//std::cout << "Voule Name : " << name << std::endl;
-// 				GEO_PrimVolume *vol = (GEO_PrimVolume *)prim;
-// 				int resx, resy, resz;
-// 
-// 				// Save resolution
-// 				vol->getRes(resx, resy, resz);
-// 
-// 				//float freq = sopparms.getFrequency();
-// 
-// 				myNoise->SetFrequency(noisefreq);
-// 				myNoise->SetSeed(noiseseed);
-// 
-// 				// Set Fractal Parm
-// 				
-// 				switch (fractaltype)
-// 				{
-// 					case SOP_HFFastNoiseParms::Fractaltype::FBM :
-// 					{
-// 						myNoise->SetFractalType(FastNoiseSIMD::FBM);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Fractaltype::BILLOW:
-// 					{
-// 						myNoise->SetFractalType(FastNoiseSIMD::Billow);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Fractaltype::RIGIDMULTI:
-// 					{
-// 						myNoise->SetFractalType(FastNoiseSIMD::RigidMulti);
-// 						break;
-// 					}
-// 
-// 					default:
-// 						break;
-// 				}
-// 
-// 				myNoise->SetFractalOctaves(fractaloctaves);
-// 				myNoise->SetFractalLacunarity(fractallacunarity);
-// 				myNoise->SetFractalGain(fractalgain);
-// 
-// 				// Set Cell Noise Method
-// 				switch (return_method)
-// 				{
-// 					case SOP_HFFastNoiseParms::Return::CELL:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::CellValue);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCE:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCET:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCETADD:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Add);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCETCAVE:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Cave);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCETMUL:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Mul);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCETDIV:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Div);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Return::DISTANCETSUB:
-// 					{
-// 						myNoise->SetCellularReturnType(FastNoiseSIMD::CellularReturnType::Distance2Sub);
-// 						break;
-// 					}
-// 
-// 					default:
-// 						break;
-// 				}
-// 				// Set Cell Distance Functionn
-// 				switch (dist_func)
-// 				{
-// 					case SOP_HFFastNoiseParms::Distancefunction::EUCLIDEAN :
-// 					{
-// 						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Euclidean);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Distancefunction::NATURAL:
-// 					{
-// 						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Natural);
-// 						break;
-// 					}
-// 					case SOP_HFFastNoiseParms::Distancefunction::MANHATTAN:
-// 					{
-// 						myNoise->SetCellularDistanceFunction(FastNoiseSIMD::CellularDistanceFunction::Manhattan);
-// 						break;
-// 					}
-// 					default:
-// 						break;
-// 				}
-// 
-// 				float* noiseSet;
-// 
-// 				switch (noisetype)
-// 				{
-// 					case SOP_HFFastNoiseParms::Noisetype::VALUE : 
-// 					{
-// 						if(fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
-// 							noiseSet = myNoise->GetValueFractalSet(0, 0, 0, resx, resy, 1);
-// 						else
-// 							noiseSet = myNoise->GetValueSet(0, 0, 0, resx, resy, 1);
-// 
-// 						break;
-// 					}
-// 
-// 					case SOP_HFFastNoiseParms::Noisetype::PERLIN :
-// 					{
-// 						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
-// 							noiseSet = myNoise->GetPerlinFractalSet(0, 0, 0, resx, resy, 1);
-// 						else
-// 							noiseSet = myNoise->GetPerlinSet(0, 0, 0, resx, resy, 1);
-// 						break;
-// 					}
-// 
-// 					case SOP_HFFastNoiseParms::Noisetype::SIMPLE :
-// 					{
-// 						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
-// 							noiseSet = myNoise->GetSimplexFractalSet(0, 0, 0, resx, resy, 1);
-// 						else
-// 							noiseSet = myNoise->GetSimplexSet(0, 0, 0, resx, resy, 1);
-// 
-// 						break;
-// 					}
-// 
-// 					case SOP_HFFastNoiseParms::Noisetype::CUBIC :
-// 					{
-// 						if (fractaltype != SOP_HFFastNoiseParms::Fractaltype::NONE)
-// 							noiseSet = myNoise->GetCubicFractalSet(0, 0, 0, resx, resy, 1);
-// 						else
-// 							noiseSet = myNoise->GetCubicSet(0, 0, 0, resx, resy, 1);
-// 
-// 						break;
-// 					}
-// 
-// 					case SOP_HFFastNoiseParms::Noisetype::CELLULAR:
-// 					{
-// 						noiseSet = myNoise->GetCellularSet(0, 0, 0, resx, resy, 1);
-// 						break;
-// 					}
-// 
-// 					default:
-// 						break;
-// 				}
-// 
-// 				UT_VoxelArrayWriteHandleF	handle = vol->getVoxelWriteHandle();
-// 				UT_VoxelArrayF *arr = &(*handle);
-// 				
-// 
-// 				//bar(arr);
-// 				UT_VoxelArrayIteratorF	vit;
-// 				vit.setArray(arr);
-// 				for (vit.rewind(); !vit.atEnd(); vit.advance())
-// 				{
-// 					int x = vit.x();
-// 					int y = vit.y();
-// 					int z = vit.z();
-// 
-// 					//std::cout << x << " " << y << " " << z << "   " << x * (y + 1) + y << std::endl;
-// 
-// 					vit.setValue(noiseSet[x * resy + y]);
-// 				}
-// 				FastNoiseSIMD::FreeNoiseSet(noiseSet);
-// 			}
-// 
-// 			
-// 		}
-// 	}
-
 	detail->getPrimitiveList().bumpDataId();
 }
