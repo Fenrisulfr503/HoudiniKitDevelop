@@ -1,36 +1,6 @@
-/*
- * Copyright (c) 2020
- *	Side Effects Software Inc.  All rights reserved.
- *
- * Redistribution and use of Houdini Development Kit samples in source and
- * binary forms, with or without modification, are permitted provided that the
- * following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. The name of Side Effects Software may not be used to endorse or
- *    promote products derived from this software without specific prior
- *    written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE `AS IS' AND ANY EXPRESS
- * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *----------------------------------------------------------------------------
- * The Star SOP
- */
 
 #include "SOP_PoissionDiscSample.h"
 
-// This is an automatically generated header file based on theDsFile, below,
-// to provide SOP_PoissionDiscSampleParms, an easy way to access parameter values from
-// SOP_PoissionDiscSampleVerb::cook with the correct type.
 #include "SOP_PoissionDiscSample.proto.h"
 
 #include <GA/GA_SplittableRange.h>
@@ -54,20 +24,8 @@
 #include <GU/GU_PrimVolume.h>
 using namespace HDK_Sample;
 
-//
-// Help is stored in a "wiki" style text file.  This text file should be copied
-// to $HOUDINI_PATH/help/nodes/sop/star.txt
-//
-// See the sample_install.sh file for an example.
-//
-
-/// This is the internal name of the SOP type.
-/// It isn't allowed to be the same as any other SOP's type name.
 const UT_StringHolder SOP_PoissionDiscSample::theSOPTypeName("hdk_poissondisc"_sh);
 
-/// newSopOperator is the hook that Houdini grabs from this dll
-/// and invokes to register the SOP.  In this case, we add ourselves
-/// to the specified operator table.
 void
 newSopOperator(OP_OperatorTable *table)
 {
@@ -82,25 +40,23 @@ newSopOperator(OP_OperatorTable *table)
         OP_FLAG_GENERATOR));        // Flag it as generator
 }
 
-/// This is a multi-line raw string specifying the parameter interface
-/// for this SOP.
 static const char *theDsFile = R"THEDSFILE(
 {
     name        parameters
     parm {
-        name    "size"
-        label   "Grid Size"
+        name    "scale_range"
+        label   "Scale Range"
         type    vector
         size    2           // 2 components in a vector2
-        default { "100" "100" } // Outside and inside radius defaults
+        default { "5" "10" } // Outside and inside radius defaults
 
     }
     parm {
-        name    "mindist"      
-        label   "Min Distance" 
+        name    "threshold"      
+        label   "Threshold" 
         type    float
-        default { "2" }     
-        range   { 0.25! 20 }   
+        default { "0.1" }     
+        range   { 0! 1! }   
     }
     parm {
         name    "mybutton"
@@ -217,78 +173,58 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     // My code in theres.
     auto &&sopparms {cookparms.parms<SOP_PoissionDiscSampleParms>()} ;
-    GU_Detail *detail {cookparms.gdh().gdpNC()} ;
-	const GEO_Detail *const firstInput {cookparms.inputGeo(0)} ;
+    GU_Detail *detail = cookparms.gdh().gdpNC() ;
+	const GEO_Detail* firstInput  = cookparms.inputGeo(0)  ;
   
-    
-    const GEO_Primitive *prim;
-    GA_ROHandleS attrib(firstInput->findPrimitiveAttribute("name"));
-    UT_String name;
-    UT_Vector3 min;
-    int resx, resy, resz;
-    float volMinValue = 5;
-    float volMaxValue = 25;
-    const GEO_PrimVolume *vol;
+    UT_Vector3 volumePrimMinPosition;
+	exint width, height;
+    float volMinValue = sopparms.getScale_range().x();
+    float volMaxValue = sopparms.getScale_range().y();
+	float threshold = sopparms.getThreshold();
+    GEO_PrimVolume *vol;
+	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
+	
 
-    GA_FOR_ALL_PRIMITIVES(firstInput, prim)
-    {
-        if (prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-        {
-            if (attrib.isValid())
-            {
-                name = attrib.get(prim->getMapOffset());
-            }
-           
-            if(name == "mask")
-            {
-                vol = (GEO_PrimVolume *) prim;
-                vol->getRes(resx, resy, resz);
-                //volMinValue = vol->calcMinimum();
-                //volMaxValue = vol->calcMaximum();
-                UT_Vector3 p1, p2;
-                vol->indexToPos(0, 0, 0, p1);
-	            vol->indexToPos(1, 0, 0, p2);
-                resx *=(p1 - p2).length();
-                resy *=(p1 - p2).length();
-                resz *=(p1 - p2).length();
+	if (maskPrim == nullptr)
+	{
+		return;
+	}
+		
 
-                
-                UT_BoundingBox* bbox = new UT_BoundingBox{};
-                vol->getBBox(bbox);
-                min =  bbox->minvec();
-                min[1] = 0;
-                delete bbox;
+	if (maskPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+	{
 
-            }
-        }
-    }
+		vol = ( GEO_PrimVolume *)maskPrim;
+		int resx, resy, resz;
+		UT_Vector3 p1, p2;
+		vol->getRes(resx, resy, resz);
+		vol->indexToPos(0, 0, 0, p1);
+		vol->indexToPos(1, 0, 0, p2);
+		float voxelLength = (p1 - p2).length();
 
-    //exint loopIndex  = sopparms.getSize().x();
-    // exint height = sopparms.getSize().y();
-    exint width = resx;
-    exint height = resy;
+		width = resx * voxelLength; height = resy * voxelLength;
+		volumePrimMinPosition = firstInput->getPos3(vol->getPointOffset(0));
+		volumePrimMinPosition[0] -= width * 0.5;
+		volumePrimMinPosition[2] -= height * 0.5;
+	}
 
-    // float minDistance = sopparms.getMindist();
     float minDistance = volMaxValue;
 
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
         return;
-    
-    //volMaxValue
+  
     float cellSize  = volMaxValue / sqrt(2) ;
 
     exint gridwidth  {int(width / cellSize) + 1} ;
     exint gridheight {int(height / cellSize) + 1} ;
 
-    if(gridheight <5 || gridwidth < 5)
+    if(gridheight < 5 || gridwidth < 5)
     {
         return;
     }
 
     exint sampleCounts {36};
-
-    // init Grid Arrays
     
     using GridArray = UT_Array<UT_Array<UT_IntArray>>;
     GridArray grid;
@@ -298,43 +234,28 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         gridx.setSize(gridwidth);
     }
 
-    // for(auto &gridx : grid)
-    // {
-    //     for(auto &item : gridx)
-    //     {
-    //         item = -1;
-    //     }
-    // }
-
     UT_IntArray processList{};
+	UT_IntArray useIndexsList{};
     UT_Array<UT_Vector2> sampleList{};
     UT_Array<float> pscaleAttrib{};
+	
     uint initSeed1 = 1984;
     uint initSeed2 = 1995;
     UT_Vector2 firstPoint{ UTrandom(initSeed1) * width, UTrandom(initSeed2) * height };
     UT_Vector3 samplePoint3(firstPoint[0], 0, firstPoint[1]);
 
-    float grey = vol->getValue( samplePoint3 + min);
-    minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
+    float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
+	if (grey < threshold)
+		grey = 1.0;
 
+	grey = grey * grey;
+    minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
     exint SamplelistIndex = sampleList.append(firstPoint);
     processList.append(SamplelistIndex);
     pscaleAttrib.append(minDistance);
 
     grid[int(firstPoint[1] / cellSize)][int(firstPoint[0] / cellSize)].append(SamplelistIndex) ;
     
-    //Vire First Point
-    // std::cout << firstPoint << std::endl;
-
-    // for(auto &gridx : grid)
-    // {
-    //     for(auto &item : gridx)
-    //     {
-    //         std::cout << item << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-
     auto GeneratPoint = [](UT_Vector2& point, float mindist, int id) -> UT_Vector2
     {
         uint i1 = point[0] * 1984 + 115 + id ;
@@ -357,12 +278,12 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             exint indexWidth  = int(point[0] / cellSize );
             exint indexHeight = int(point[1] / cellSize );
 
-            indexWidth  = UTclamp(int(indexWidth), 3, int(gridwidth - 4)) ;
-            indexHeight  = UTclamp(int(indexHeight), 3, int(gridheight - 4)) ;
+            indexWidth  = UTclamp(int(indexWidth), 1, int(gridwidth - 2)) ;
+            indexHeight  = UTclamp(int(indexHeight), 1, int(gridheight - 2)) ;
             int index = -1;
-            for (int h = -3; h < 4; h++)
+            for (int h = -1; h < 2; h++)
             {
-                for (int w = -3; w < 4; w++)
+                for (int w = -1; w < 2; w++)
                 {
                     
                     auto& indexArr = grid[indexHeight + h][indexWidth+w] ;
@@ -381,16 +302,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
                 }
             }
 
-            // if(index > -1) 
-            // {
-            //     UT_Vector2 ptTemp {sampleList[index]};
-            //     //std::cout << "Index is : " << index << std::endl;
-            //     std::cout << "Source Point : " << point << std::endl;
-            //     std::cout << "Grid Point : " << ptTemp << std::endl;
-            //     std::cout << "This Point Will Add : " << distance2d(point, ptTemp) << std::endl;
-            // }        
-
-            
             return true;
         }
         else
@@ -399,22 +310,9 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         }
     };
 
-
-    // int idx = processList[0];
-    // processList.removeLast();
-
-    // UT_Vector2 pp {0,0};
-    // std::cout << "Distance is : " << firstPoint.distance(pp);
-
-    // std::cout << processList.size() << std::endl;
-
     while ( !processList.isEmpty())
     {
-    // for (size_t i = 0; i < 10; i++)
-    // {
 
-
-    
         int precessIndex { processList[processList.size() - 1] } ;
         processList.removeLast();
         for (size_t i = 0; i < sampleCounts; i++)
@@ -424,14 +322,15 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             UT_Vector2 newPoint {GeneratPoint(point, minDistance, i)};
             UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
 
-            float grey = vol->getValue( samplePoint3 + min);
+            float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
             minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
 
             if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
                 SamplelistIndex = sampleList.append(newPoint);
                 processList.append(SamplelistIndex);
-                pscaleAttrib.append(minDistance);
+				pscaleAttrib.append(minDistance);
+
                 grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)].append(SamplelistIndex) ;
             }
         }
@@ -463,11 +362,11 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         UT_Vector3 pos{sampleList[i][0], 0, sampleList[i][1]};
 
         GA_Offset offset= detail->pointOffset(i);
-        detail->setPos3(offset, pos + min);
+        detail->setPos3(offset, pos + volumePrimMinPosition);
         pscaleValueHandle.set(offset, pscaleAttrib[i]);
     }
     
-    detail->bumpAllDataIds();
+/*	detail->getP()->bumpDataId();*/
 
 
 
