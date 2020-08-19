@@ -17,6 +17,7 @@
 #include <SYS/SYS_Math.h>
 #include <limits.h>
 
+#include <UT/UT_Quaternion.h>
 #include <UT/UT_Options.h>
 #include <GA/GA_Attribute.h>
 #include <UT/UT_FastRandom.h>
@@ -118,23 +119,24 @@ PRM_Template*
 SOP_PoissionDiscSample::buildTemplates()
 {
     static PRM_TemplateBuilder templ("SOP_PoissionDiscSample.C"_sh, theDsFile);
-    std::cout << templ.templateLength() << std::endl;
+    // std::cout << templ.templateLength() << std::endl;
 
     auto prmPtr = templ.templates();
-    for(int i = 0; i < templ.templateLength(); ++i)
-    {
+    
+    // for(int i = 0; i < templ.templateLength(); ++i)
+    // {
         
-        // std::cout << prmPtr->getLabel() << std::endl;
-        if(UT_StringHolder(prmPtr->getLabel()) == UT_StringHolder("My Button"))
-        {
-            std::cout << "I got my button ui. \n";
+    //     // std::cout << prmPtr->getLabel() << std::endl;
+    //     if(UT_StringHolder(prmPtr->getLabel()) == UT_StringHolder("My Button"))
+    //     {
+    //         std::cout << "I got my button ui. \n";
 
             
-            prmPtr->setCallback(PRM_Callback(func));
-        }
-        prmPtr++;
+    //         prmPtr->setCallback(PRM_Callback(func));
+    //     }
+    //     prmPtr++;
 
-    }
+    // }
     return templ.templates();
 }
 
@@ -182,15 +184,19 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     float volMaxValue = sopparms.getScale_range().y();
 	float threshold = sopparms.getThreshold();
     GEO_PrimVolume *vol;
+    GEO_PrimVolume *heightVol;
 	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
-	
+	const GEO_Primitive* heightPrim{ firstInput->findPrimitiveByName("height") };
 
-	if (maskPrim == nullptr)
+	if (maskPrim == nullptr || heightPrim  == nullptr)
 	{
 		return;
 	}
-		
-
+	
+    if (heightPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+	{
+        heightVol = ( GEO_PrimVolume *)heightPrim;
+    }
 	if (maskPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
 	{
 
@@ -323,9 +329,12 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
 
             float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
+        
             minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
-
-            if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
+            float tempDistance = minDistance;
+            if(minDistance < pscaleAttrib[precessIndex])
+                tempDistance = pscaleAttrib[precessIndex];
+            if(IsVaild(sampleList, grid, newPoint, tempDistance, cellSize))
             {
                 SamplelistIndex = sampleList.append(newPoint);
                 processList.append(SamplelistIndex);
@@ -356,261 +365,47 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     pscaleValueHandle.bind(pointDistanceAttr);
 
-
-    for (size_t i = 0; i < pointNumbers; i++)
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput](const GA_SplittableRange &r)
     {
-        UT_Vector3 pos{sampleList[i][0], 0, sampleList[i][1]};
-
-        GA_Offset offset= detail->pointOffset(i);
-        detail->setPos3(offset, pos + volumePrimMinPosition);
-        pscaleValueHandle.set(offset, pscaleAttrib[i]);
-    }
-    
-/*	detail->getP()->bumpDataId();*/
-
-
-
-    // Ceck for Sample List
-    // for(auto & p : sampleList)
-    // {
-    //     std::cout << p << std::endl;
-    // }
-
-    // for (uint i = 0; i < 50; i++)
-    // {  
-    //     std::cout << UTrandom(i) << std::endl;
-    // }
-    
-	// UT_ASSERT(firstInput);
-
-	// detail->replaceWith(*firstInput);
-	// GOP_Manager group_manager;
-	// const GA_PointGroup *point_group = nullptr;
-
-	// const UT_StringHolder &groupcontent = sopparms.getGroup();
-	// if (groupcontent.isstring())
-	// {
-	// 	point_group = group_manager.parsePointGroups(groupcontent, GOP_Manager::GroupCreator(detail));
-	// }
-
-	// if (!point_group)
-	// {
-	// 	cookparms.sopAddWarning(SOP_MESSAGE, "Input geometry contains non-polygon primitives, so results may not be as expected");
-	// }
-
-	// GA_PointGroup *pGroup = detail->newPointGroup("__test_group__", false);
-
-	
-	// pGroup->addOffset(detail->pointOffset(GA_Index(0)));
-	// pGroup->addRange(detail->getPointRange(point_group));
-    
-	// //Check Polygon Numbers
-
-	// auto prim = detail->getPrimitiveRange();
-	// GA_Offset primStart;
-	// GA_Offset primEnd;
-	// for (GA_Iterator it(detail->getPrimitiveRange()); it.blockAdvance(primStart, primEnd);)
-	// {
-	// 	for (GA_Offset ptoff = primStart; ptoff < primEnd; ++ptoff)
-	// 	{
-	// 		if (detail->getPrimitive(ptoff)->getVertexCount() != 3)
-	// 		{
-	// 			cookparms.sopAddError(SOP_MESSAGE, "This Gemotry must be triangles.");
-	// 			return;
-	// 		}
-	// 	}
-	// }
-
-
-
-
-    // GA_RWHandleFA myAttrb2;
-    
-    // myAttrb2.bind(detail->addFloatArray(GA_ATTRIB_PRIMITIVE, "prims"));
-    // GA_Offset prim_start;
-    // GA_Offset prim_end;
-    // for (GA_Iterator it(detail->getPrimitiveRange()); it.blockAdvance(prim_start, prim_end);) 
-    // {
-    //     for (GA_Offset ptoff = prim_start; ptoff < prim_end; ++ptoff)
-    //         {
-    //             auto primTive = detail->getPrimitive(ptoff);
-
-
-    //             GA_Offset start;
-    //             GA_Offset end;
-    //             auto pointRange = primTive->getPointRange();
+        GA_Offset start;
+        GA_Offset end;
+        for (GA_Iterator it(r); it.blockAdvance(start, end);) 
+        {
+            for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
+            {
+                // Set Height Value to P
                 
-    //             UT_Fpreal32Array arr;
-    //             for (GA_Iterator pit(pointRange); pit.blockAdvance(start, end);) 
-    //             {
-    //                 for (GA_Offset ptoff1 = start; ptoff1 < end; ++ptoff1)
-    //                 {
-    //                     arr.append(ptoff1);
-    //                 }
-    //             }
-    //             myAttrb2.set(ptoff, arr);
-    //         }
-    // }
+                UT_Vector3 pos{sampleList[ptoff][0], 0, sampleList[ptoff][1]};
+                pos += volumePrimMinPosition;
+                pos[1] = heightVol->getValue(pos);
+                detail->setPos3(ptoff, pos );
+                pscaleValueHandle.set(ptoff, pscaleAttrib[ptoff]);
 
-    // GA_RWHandleS myAttrb;
-    // auto attr =  detail->addStringTuple(GA_ATTRIB_POINT, "starstarnine", 1);
-    // myAttrb.bind(attr);
+                // Set for all volume value
 
-    // UTparallelFor(GA_SplittableRange(detail->getPointRange()), [detail, myAttrb](const GA_SplittableRange &r)
-    // {
-    //     GA_Offset start;
-    //     GA_Offset end;
-    //     for (GA_Iterator it(r); it.blockAdvance(start, end);) 
-    //     {
-    //         for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
-    //         {
-    //             auto pos = detail->getPos3(ptoff);
-    //             pos[2] += 1;
+                // auto primRange = firstInput->getPrimitiveRange();
+                // GA_Offset primStart;
+                // GA_Offset primEnd;
 
-    //             detail->setPos3(ptoff, pos );
-    //             myAttrb.set(ptoff, "Fuck");
-    //         }
-    //     }
-    // } 
-    // );
+                // GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
+                // UT_StringHolder name;
+                // for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
+                // {
+                //     for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
+                //     {
+                //         GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
 
-    // attr->bumpDataId();
+                //         if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+                //         {
+                //             GEO_PrimVolume* primVol = ( GEO_PrimVolume *)prim;
+                //             name = attrib..get(prim->getMapOffset());
 
+                //         }
+                //     }
+                // }
+            }
+        }
+    } 
+    );
 
-    // UT_StringHolder file = sopparms.getShader_file();
-    // UT_Options option =  UT_Options();
-    // GA_AttributeOptions attribOptions = GA_AttributeOptions();
-
- 
-    // auto attrib = detail->addAttribute("filePath", &option, &attribOptions, "string", GA_AttributeOwner::GA_ATTRIB_DETAIL);
-
-    // auto tuple = attrib->getAIFStringTuple();
-    // tuple->setString(attrib, 0, file, 0);
-    
-    // attrib->bumpDataId();
-    // auto &&sopparms = cookparms.parms<SOP_PoissionDiscSampleParms>();
-    // GU_Detail *detail = cookparms.gdh().gdpNC();
-
-    // // We need two points per division
-    // exint npoints = sopparms.getDivs()*2;
-
-    // if (npoints < 4)
-    // {
-    //     // With the range restriction we have on the divisions, this
-    //     // is actually impossible, (except via integer overflow),
-    //     // but it shows how to add an error message or warning to the SOP.
-    //     cookparms.sopAddWarning(SOP_MESSAGE, "There must be at least 2 divisions; defaulting to 2.");
-    //     npoints = 4;
-    // }
-
-    // // If this SOP has cooked before and it wasn't evicted from the cache,
-    // // its output detail will contain the geometry from the last cook.
-    // // If it hasn't cooked, or if it was evicted from the cache,
-    // // the output detail will be empty.
-    // // This knowledge can save us some effort, e.g. if the number of points on
-    // // this cook is the same as on the last cook, we can just move the points,
-    // // (i.e. modifying P), which can also save some effort for the viewport.
-    // GA_Detail
-    // GA_Offset start_ptoff;
-    // if (detail->getNumPoints() != npoints)ee
-    // {
-    //     // Either the SOP hasn't cooked, the detail was evicted from
-    //     // the cache, or the number of points changed since the last cook.
-
-    //     // This destroys everything except the empty P and topology attributes.
-    //     detail->clearAndDestroy();
-
-    //     // Build 1 closed polygon (as opposed to a curve),
-    //     // namely that has its closed flag set to true,
-    //     // and the right number of vertices, as a contiguous block
-    //     // of vertex offsets.
-    //     GA_Offset start_vtxoff;
-    //     detail->appendPrimitivesAndVertices(GA_PRIMPOLY, 1, npoints, start_vtxoff, true);
-
-    //     // Create the right number of points, as a contiguous block
-    //     // of point offsets.
-    //     start_ptoff = detail->appendPointBlock(npoints);
-
-    //     // Wire the vertices to the points.
-    //     for (exint i = 0; i < npoints; ++i)
-    //     {
-    //         detail->getTopology().wireVertexPoint(start_vtxoff+i,start_ptoff+i);
-    //     }
-
-    //     // We added points, vertices, and primitives,
-    //     // so this will bump all topology attribute data IDs,
-    //     // P's data ID, and the primitive list data ID.
-    //     detail->bumpDataIdsForAddOrRemove(true, true, true);
-    // }
-    // else
-    // {
-    //     // Same number of points as last cook, and we know that last time,
-    //     // we created a contiguous block of point offsets, so just get the
-    //     // first one.
-    //     start_ptoff = detail->pointOffset(GA_Index(0));
-
-    //     // We'll only be modifying P, so we only need to bump P's data ID.
-    //     detail->getP()->bumpDataId();
-    // }
-
-    // // Everything after this is just to figure out what to write to P and write it.
-
-    // const SOP_PoissionDiscSampleParms::Orient plane = sopparms.getOrient();
-    // const bool allow_negative_radius = sopparms.getNradius();
-
-    // UT_Vector3 center = sopparms.getT();
-
-    // int xcoord, ycoord, zcoord;
-    // switch (plane)
-    // {
-    //     case SOP_PoissionDiscSampleParms::Orient::XY:         // XY Plane
-    //         xcoord = 0;
-    //         ycoord = 1;
-    //         zcoord = 2;
-    //         break;
-    //     case SOP_PoissionDiscSampleParms::Orient::YZ:         // YZ Plane
-    //         xcoord = 1;
-    //         ycoord = 2;
-    //         zcoord = 0;
-    //         break;
-    //     case SOP_PoissionDiscSampleParms::Orient::ZX:         // XZ Plane
-    //         xcoord = 0;
-    //         ycoord = 2;
-    //         zcoord = 1;
-    //         break;
-    // }
-
-    // // Start the interrupt scope
-    // UT_AutoInterrupt boss("Building Star");
-    // if (boss.wasInterrupted())
-    //     return;
-
-    // float tinc = M_PI*2 / (float)npoints;
-    // float outer_radius = sopparms.getRad().x();
-    // float inner_radius = sopparms.getRad().y();
-    
-    // // Now, set all the points of the polygon
-    // for (exint i = 0; i < npoints; i++)
-    // {
-    //     // Check to see if the user has interrupted us...
-    //     if (boss.wasInterrupted())
-    //         break;
-
-    //     float angle = (float)i * tinc;
-    //     bool odd = (i & 1);
-    //     float rad = odd ? inner_radius : outer_radius;
-    //     if (!allow_negative_radius && rad < 0)
-    //         rad = 0;
-
-    //     UT_Vector3 pos(SYScos(angle)*rad, SYSsin(angle)*rad, 0);
-    //     // Put the circle in the correct plane.
-    //     pos = UT_Vector3(pos(xcoord), pos(ycoord), pos(zcoord));
-    //     // Move the circle to be centred at the correct position.
-    //     pos += center;
-
-    //     // Since we created a contiguous block of point offsets,
-    //     // we can just add i to start_ptoff to find this point offset.
-    //     GA_Offset ptoff = start_ptoff + i;
-    //     detail->setPos3(ptoff, pos);
-    // }
 }
