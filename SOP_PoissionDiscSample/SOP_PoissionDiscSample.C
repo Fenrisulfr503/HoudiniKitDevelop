@@ -291,7 +291,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             {
                 for (int w = -1; w < 2; w++)
                 {
-                    
                     auto& indexArr = grid[indexHeight + h][indexWidth+w] ;
                     
                     for(auto ptindex : indexArr)
@@ -365,7 +364,41 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     pscaleValueHandle.bind(pointDistanceAttr);
 
-    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput](const GA_SplittableRange &r)
+    struct VolumeData
+    {
+        UT_StringHolder name;
+        GEO_PrimVolume* primVol;
+        GA_Attribute* volumeAttribute;
+    };
+    
+    using VolumeDataArray = UT_Array<VolumeData> ;
+    VolumeDataArray volDataArr;
+    //Set for all volume value
+
+    auto primRange = firstInput->getPrimitiveRange();
+    GA_Offset primStart;
+    GA_Offset primEnd;
+    GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
+    for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
+    {
+        for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
+        {
+            GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
+
+            if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+            {
+                VolumeData volData;
+                volData.primVol = ( GEO_PrimVolume *)prim;
+                volData.name = attribName.get(prim->getMapOffset());
+                volData.volumeAttribute = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1); 
+                volDataArr.append(volData);
+
+            }
+        }
+    }
+
+
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput, &volDataArr](const GA_SplittableRange &r)
     {
         GA_Offset start;
         GA_Offset end;
@@ -374,35 +407,22 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
             {
                 // Set Height Value to P
-                
                 UT_Vector3 pos{sampleList[ptoff][0], 0, sampleList[ptoff][1]};
                 pos += volumePrimMinPosition;
                 pos[1] = heightVol->getValue(pos);
+                
                 detail->setPos3(ptoff, pos );
                 pscaleValueHandle.set(ptoff, pscaleAttrib[ptoff]);
 
-                // Set for all volume value
+                GA_RWHandleF volValueHandle;
+                for(auto &volData : volDataArr)
+                {
+                    volValueHandle.bind(volData.volumeAttribute);
 
-                // auto primRange = firstInput->getPrimitiveRange();
-                // GA_Offset primStart;
-                // GA_Offset primEnd;
+                    float val = volData.primVol->getValue(pos);
+                    volValueHandle.set(ptoff, val);
+                }
 
-                // GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
-                // UT_StringHolder name;
-                // for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
-                // {
-                //     for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
-                //     {
-                //         GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
-
-                //         if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-                //         {
-                //             GEO_PrimVolume* primVol = ( GEO_PrimVolume *)prim;
-                //             name = attrib..get(prim->getMapOffset());
-
-                //         }
-                //     }
-                // }
             }
         }
     } 
