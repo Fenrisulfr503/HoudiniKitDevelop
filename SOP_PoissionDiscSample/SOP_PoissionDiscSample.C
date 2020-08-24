@@ -52,57 +52,6 @@ static const char *theDsFile = R"THEDSFILE(
         default { "5" "10" } // Outside and inside radius defaults
 
     }
-    parm {
-        name    "threshold"      
-        label   "Threshold" 
-        type    float
-        default { "0.1" }     
-        range   { 0! 1! }   
-    }
-    parm {
-        name    "mybutton"
-        label   "My Button"
-        type    button
-    }
-
-    parm {
-        name    "direct"
-        label   "Direct"
-        type    direction
-        size    3
-        default { "0" "0" "0" }
-        range   { 0 1 }
-    }
-    
-    parm {
-        name    "ramp"
-        label   "Ramp"
-        type    rgbamask
-        default { "15" }
-    }
-    parm {
-        name    "ramprgb"
-        label   "RampRgb"
-        type    ramp_rgb
-        default { "2" }
-        range   { 1! 10 }
-
-    }
-    parm {
-        name    "gridsize"
-        label   "Grid Size"
-        type    intvector2
-        size    2
-        default { "5" "5" }
-        range   { 0 1000 }
-
-    }
-    parm {
-        name    "sepparm"
-        label   "Separator"
-        type    separator
-        default { "" }
-    }
 }
 )THEDSFILE";
 
@@ -182,7 +131,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	exint width, height;
     float volMinValue = sopparms.getScale_range().x();
     float volMaxValue = sopparms.getScale_range().y();
-	float threshold = sopparms.getThreshold();
     GEO_PrimVolume *vol;
     GEO_PrimVolume *heightVol;
 	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
@@ -208,7 +156,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		vol->indexToPos(1, 0, 0, p2);
 		float voxelLength = (p1 - p2).length();
 
-		width = resx * voxelLength; height = resy * voxelLength;
+		width = (resx-1) * voxelLength; height = (resy-1) * voxelLength;
 		volumePrimMinPosition = firstInput->getPos3(vol->getPointOffset(0));
 		volumePrimMinPosition[0] -= width * 0.5;
 		volumePrimMinPosition[2] -= height * 0.5;
@@ -250,12 +198,9 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     UT_Vector2 firstPoint{ UTrandom(initSeed1) * width, UTrandom(initSeed2) * height };
     UT_Vector3 samplePoint3(firstPoint[0], 0, firstPoint[1]);
 
-    float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
-	if (grey < threshold)
-		grey = 1.0;
+    float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);	
+	minDistance = SYSfit(grey, 0, 1, volMinValue, volMaxValue);
 
-	grey = grey * grey;
-    minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
     exint SamplelistIndex = sampleList.append(firstPoint);
     processList.append(SamplelistIndex);
     pscaleAttrib.append(minDistance);
@@ -279,7 +224,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     auto IsVaild = [ &width, &height, &gridwidth, &gridheight]( UT_Array<UT_Vector2>& sampleList, GridArray& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
     {
-        if(point[0] >=0 && point[0] <= width && point[1] >= 0 && point[1]<=height)
+        if(point[0] >0.01 && point[0] < width-0.01 && point[1] > 0.01 && point[1]<height-0.01)
         {
             exint indexWidth  = int(point[0] / cellSize );
             exint indexHeight = int(point[1] / cellSize );
@@ -329,11 +274,13 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
             float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
         
-            minDistance = volMinValue  + grey * (volMaxValue - volMinValue);
-            float tempDistance = minDistance;
-            if(minDistance < pscaleAttrib[precessIndex])
-                tempDistance = pscaleAttrib[precessIndex];
-            if(IsVaild(sampleList, grid, newPoint, tempDistance, cellSize))
+			minDistance = SYSfit(grey, 0, 1, volMinValue, volMaxValue);
+
+//            float tempDistance = minDistance;
+//             if(minDistance < pscaleAttrib[precessIndex])
+//                 tempDistance = pscaleAttrib[precessIndex];
+
+            if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
                 SamplelistIndex = sampleList.append(newPoint);
                 processList.append(SamplelistIndex);
@@ -396,9 +343,10 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             }
         }
     }
+	
+	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
 
-
-    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput, &volDataArr](const GA_SplittableRange &r)
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
     {
         GA_Offset start;
         GA_Offset end;
@@ -410,7 +358,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
                 UT_Vector3 pos{sampleList[ptoff][0], 0, sampleList[ptoff][1]};
                 pos += volumePrimMinPosition;
                 pos[1] = heightVol->getValue(pos);
-                
+				pos[1] += pointPosition[1];
                 detail->setPos3(ptoff, pos );
                 pscaleValueHandle.set(ptoff, pscaleAttrib[ptoff]);
 
