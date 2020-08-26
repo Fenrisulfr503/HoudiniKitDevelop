@@ -339,7 +339,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
                 volData.name = attribName.get(prim->getMapOffset());
                 volData.volumeAttribute = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1); 
                 volDataArr.append(volData);
-
             }
         }
     }
@@ -356,9 +355,14 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             {
                 // Set Height Value to P
                 UT_Vector3 pos{sampleList[ptoff][0], 0, sampleList[ptoff][1]};
+				
                 pos += volumePrimMinPosition;
                 pos[1] = heightVol->getValue(pos);
 				pos[1] += pointPosition[1];
+
+				UT_Vector3 samplePosition{ pos };
+				samplePosition[1] = pointPosition[1];
+
                 detail->setPos3(ptoff, pos );
                 pscaleValueHandle.set(ptoff, pscaleAttrib[ptoff]);
 
@@ -367,7 +371,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
                 {
                     volValueHandle.bind(volData.volumeAttribute);
 
-                    float val = volData.primVol->getValue(pos);
+                    float val = volData.primVol->getValue(samplePosition);
                     volValueHandle.set(ptoff, val);
                 }
 
