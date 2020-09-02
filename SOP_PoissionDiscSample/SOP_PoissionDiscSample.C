@@ -158,9 +158,11 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
         return;
-    volumePrimMinPosition[1] = 0;
+
+    
     UT_Array<SampleData> sampleList;
-    sampleList.setCapacity(5000);
+    sampleList.setCapacity(15000);
+
     PoissionDiscSample(sampleList, 
 	vol,
 	width, height, volMinValue, volMaxValue ,
