@@ -1,6 +1,6 @@
 
 #include "SOP_PoissionDiscSample.h"
-
+#include "GU_PoissionDiscSampling.h"
 #include "SOP_PoissionDiscSample.proto.h"
 
 #include <GA/GA_SplittableRange.h>
@@ -68,24 +68,9 @@ PRM_Template*
 SOP_PoissionDiscSample::buildTemplates()
 {
     static PRM_TemplateBuilder templ("SOP_PoissionDiscSample.C"_sh, theDsFile);
-    // std::cout << templ.templateLength() << std::endl;
 
     auto prmPtr = templ.templates();
     
-    // for(int i = 0; i < templ.templateLength(); ++i)
-    // {
-        
-    //     // std::cout << prmPtr->getLabel() << std::endl;
-    //     if(UT_StringHolder(prmPtr->getLabel()) == UT_StringHolder("My Button"))
-    //     {
-    //         std::cout << "I got my button ui. \n";
-
-            
-    //         prmPtr->setCallback(PRM_Callback(func));
-    //     }
-    //     prmPtr++;
-
-    // }
     return templ.templates();
 }
 
@@ -131,6 +116,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	exint width, height;
     float volMinValue = sopparms.getScale_range().x();
     float volMaxValue = sopparms.getScale_range().y();
+
     GEO_PrimVolume *vol;
     GEO_PrimVolume *heightVol;
 	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
@@ -162,134 +148,23 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		volumePrimMinPosition[2] -= height * 0.5;
 	}
 
-    float minDistance = volMaxValue;
+    // Keep volValue can,t to samll
+    const float limitValue = 0.02;
+    if(volMinValue < limitValue)
+        volMinValue = limitValue;
+    if(volMaxValue < limitValue)
+        volMaxValue = limitValue;
 
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
         return;
-  
-    float cellSize  = volMaxValue / sqrt(2) ;
-
-    exint gridwidth  {int(width / cellSize) + 1} ;
-    exint gridheight {int(height / cellSize) + 1} ;
-
-    if(gridheight < 5 || gridwidth < 5)
-    {
-        return;
-    }
-
-    exint sampleCounts {36};
-    
-    using GridArray = UT_Array<UT_Array<UT_IntArray>>;
-    GridArray grid;
-    grid.setSize(gridheight);
-    for(auto &gridx : grid)
-    {
-        gridx.setSize(gridwidth);
-    }
-
-    UT_IntArray processList{};
-	UT_IntArray useIndexsList{};
-    UT_Array<UT_Vector2> sampleList{};
-    UT_Array<float> pscaleAttrib{};
-	
-    uint initSeed1 = 1984;
-    uint initSeed2 = 1995;
-    UT_Vector2 firstPoint{ UTrandom(initSeed1) * width, UTrandom(initSeed2) * height };
-    UT_Vector3 samplePoint3(firstPoint[0], 0, firstPoint[1]);
-
-    float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);	
-	minDistance = SYSfit(grey, 0, 1, volMinValue, volMaxValue);
-
-    exint SamplelistIndex = sampleList.append(firstPoint);
-    processList.append(SamplelistIndex);
-    pscaleAttrib.append(minDistance);
-
-    grid[int(firstPoint[1] / cellSize)][int(firstPoint[0] / cellSize)].append(SamplelistIndex) ;
-    
-    auto GeneratPoint = [](UT_Vector2& point, float mindist, int id) -> UT_Vector2
-    {
-        uint i1 = point[0] * 1984 + 115 + id ;
-        uint i2 = point[1] * 1995 + 775 + id ;
-        float r1 {UTrandom(i1)};
-        float r2 {UTrandom(i2)};
-        float radius {mindist * (r1 + 1)} ;
-        float angle  = 2 * 3.1415 * r2 ;
-
-        float newX {point[0] + radius * cos(angle)};
-        float newY {point[1] + radius * sin(angle)};
-        return {newX, newY};
-
-    };
-
-    auto IsVaild = [ &width, &height, &gridwidth, &gridheight]( UT_Array<UT_Vector2>& sampleList, GridArray& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
-    {
-        if(point[0] >0.01 && point[0] < width-0.01 && point[1] > 0.01 && point[1]<height-0.01)
-        {
-            exint indexWidth  = int(point[0] / cellSize );
-            exint indexHeight = int(point[1] / cellSize );
-
-            indexWidth  = UTclamp(int(indexWidth), 1, int(gridwidth - 2)) ;
-            indexHeight  = UTclamp(int(indexHeight), 1, int(gridheight - 2)) ;
-            int index = -1;
-            for (int h = -1; h < 2; h++)
-            {
-                for (int w = -1; w < 2; w++)
-                {
-                    auto& indexArr = grid[indexHeight + h][indexWidth+w] ;
-                    
-                    for(auto ptindex : indexArr)
-                    {
-                        if(ptindex > -1)
-                        {
-                            if( point.distance( sampleList[ptindex] ) < mindist)
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                    
-                }
-            }
-
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    };
-
-    while ( !processList.isEmpty())
-    {
-
-        int precessIndex { processList[processList.size() - 1] } ;
-        processList.removeLast();
-        for (size_t i = 0; i < sampleCounts; i++)
-        {
-            UT_Vector2 point {sampleList[precessIndex]} ;
-            
-            UT_Vector2 newPoint {GeneratPoint(point, minDistance, i)};
-            UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
-
-            float grey = vol->getValue( samplePoint3 + volumePrimMinPosition);
-        
-			minDistance = SYSfit(grey, 0, 1, volMinValue, volMaxValue);
-
-//            float tempDistance = minDistance;
-//             if(minDistance < pscaleAttrib[precessIndex])
-//                 tempDistance = pscaleAttrib[precessIndex];
-
-            if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
-            {
-                SamplelistIndex = sampleList.append(newPoint);
-                processList.append(SamplelistIndex);
-				pscaleAttrib.append(minDistance);
-
-                grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)].append(SamplelistIndex) ;
-            }
-        }
-    }
+    volumePrimMinPosition[1] = 0;
+    UT_Array<SampleData> sampleList;
+    sampleList.setCapacity(5000);
+    PoissionDiscSample(sampleList, 
+	vol,
+	width, height, volMinValue, volMaxValue ,
+	7585, volumePrimMinPosition);
 
 
     exint pointNumbers { sampleList.size()};
@@ -345,7 +220,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	
 	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
 
-    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList, &pscaleAttrib, heightVol, &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  heightVol, &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
     {
         GA_Offset start;
         GA_Offset end;
@@ -354,7 +229,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
             {
                 // Set Height Value to P
-                UT_Vector3 pos{sampleList[ptoff][0], 0, sampleList[ptoff][1]};
+                UT_Vector3 pos{sampleList[ptoff].position[0], 0, sampleList[ptoff].position[1]};
 				
                 pos += volumePrimMinPosition;
                 pos[1] = heightVol->getValue(pos);
@@ -364,7 +239,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 				samplePosition[1] = pointPosition[1];
 
                 detail->setPos3(ptoff, pos );
-                pscaleValueHandle.set(ptoff, pscaleAttrib[ptoff]);
+                pscaleValueHandle.set(ptoff, sampleList[ptoff].scale);
 
                 GA_RWHandleF volValueHandle;
                 for(auto &volData : volDataArr)
