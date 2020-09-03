@@ -1,6 +1,7 @@
 
 #include "SopMultiPoissionDiscSample.h"
 
+#include "GU_PoissionDiscSampling.h"
 #include "SopMultiPoissionDiscSample.proto.h"
 
 #include <GA/GA_SplittableRange.h>
@@ -101,11 +102,106 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
 		vol = ( GEO_PrimVolume *)maskPrim;
     }
 
+    
+    if(pointsInput->getNumPoints())
+    {
+        UT_Array<UT_Array<SampleData>> ParallelSampleList{};
 
-    GA_ROHandleV2 sizeHandle(pointsInput->findPointAttribute("size"));
+        ParallelSampleList.setSize(pointsInput->getNumPoints());
+        for(auto& i : ParallelSampleList)
+            i.setCapacity(500);
 
-    UT_Vector2 sizeVal = sizeHandle.get(GA_Offset(0));
-    std::cout << sizeVal << std::endl;
+        
+        UTparallelFor(GA_SplittableRange(pointsInput->getPointRange()), [&detail, &pointsInput, &vol, &ParallelSampleList](const GA_SplittableRange &r)
+        {
+            GA_Offset start;
+            GA_Offset end;
+            for (GA_Iterator it(r); it.blockAdvance(start, end);) 
+            {
+                for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
+                {
+                    UT_Vector3 origin = pointsInput->getPos3(ptoff);
+
+                    GA_ROHandleV2 sizeHandle(pointsInput->findPointAttribute("size"));
+                    UT_Vector2 sizeVal{};
+                    UT_Vector2 scaleRangeVal{};
+                    if(sizeHandle.isValid())
+                    {
+                        sizeVal = sizeHandle.get(ptoff);
+                    }
+
+                    GA_ROHandleV2 scaleRangeHandle(pointsInput->findPointAttribute("scaleRange"));
+                    if(scaleRangeHandle.isValid())
+                    {
+                        scaleRangeVal = scaleRangeHandle.get(ptoff);
+                    }
+
+                    origin[0] -= sizeVal.x() * 0.5;
+                    origin[2] -= sizeVal.y() * 0.5;
+                    PoissionDiscSample(ParallelSampleList[ptoff], 
+                        vol,
+                        sizeVal.x(), sizeVal.y(), scaleRangeVal.x(), scaleRangeVal.y() ,
+                        ptoff + 12.45, origin);
+                }
+            }
+        } 
+        );
+
+        size_t counts = 0;
+        for(auto &i : ParallelSampleList)
+        {
+            counts += i.size();
+        }
+
+        // Merge all elements
+        UT_Array<SampleData> totalSampleList{};
+        totalSampleList.setCapacity(counts);
+        for(int i = 0; i < ParallelSampleList.size(); i++)
+        {
+            for(auto &item : ParallelSampleList[i])
+            {
+                totalSampleList.append(item);
+            }
+        }
+
+        GA_Attribute* pscaleAttrib;
+        if(totalSampleList.size() != detail->getNumPoints())
+        {
+            detail->clearAndDestroy();
+            detail->appendPointBlock(totalSampleList.size());
+            pscaleAttrib = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1); 
+            detail->bumpDataIdsForAddOrRemove(true, true, true);
+        }
+        else
+        {
+            detail->getP()->bumpDataId();
+            pscaleAttrib = detail->findPointAttribute("pscale");
+        }
+
+        if(totalSampleList.size())
+        {
+            
+            UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &totalSampleList](const GA_SplittableRange &r)
+            {
+                GA_Offset start;
+                GA_Offset end;
+                for (GA_Iterator it(r); it.blockAdvance(start, end);) 
+                {
+                    for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
+                    {
+                        UT_Vector3 pos {totalSampleList[ptoff].position.x() + totalSampleList[ptoff].offset.x(), 
+                                0, totalSampleList[ptoff].position.y() + totalSampleList[ptoff].offset.z()};
+                        detail->setPos3(ptoff, pos);
+
+                    }
+                }
+            } 
+            );
+        }
+
+    }
+
+
 
 
 }

@@ -25,6 +25,9 @@ houdini_generate_proto_headers( FILES SOP_PoissionDiscSample.C )
 add_library( ${library_name} SHARED
   SOP_PoissionDiscSample.C
   SOP_PoissionDiscSample.h
+  GU_PoissionDiscSampling.cpp
+  GU_PoissionDiscSampling.h
+
 )
 
 # Link against the Houdini libraries, and add required include directories and

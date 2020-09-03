@@ -222,6 +222,8 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	
 	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
 
+    detail->getP()->bumpDataId();
+
     UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  heightVol, &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
     {
         GA_Offset start;

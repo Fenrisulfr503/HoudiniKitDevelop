@@ -42,7 +42,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 	// 	grey = 1 - grey;
 	minDistance = SYSfit(grey, 0, 1, minSampleDist, maxSampleDist);
 
-	SampleData data { firstPoint,  minDistance};
+	SampleData data { firstPoint,  minDistance, offset};
 
     exint SamplelistIndex = sampleList.append(data);
     processList.append(SamplelistIndex);
@@ -123,7 +123,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
             {
 				data.position = newPoint;
 				data.scale = minDistance;
-
+                data.offset = offset;
                 SamplelistIndex = sampleList.append(data);
                 processList.append(SamplelistIndex);
                 grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)].append(SamplelistIndex) ;

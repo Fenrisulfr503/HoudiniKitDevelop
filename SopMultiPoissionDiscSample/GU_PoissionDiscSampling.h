@@ -1,0 +1,21 @@
+#pragma once
+
+#include <UT/UT_IntArray.h>
+#include <UT/UT_Vector3.h>
+
+
+class GEO_PrimVolume;
+using GridArray = UT_Array<UT_Array<UT_IntArray>>;
+
+struct SampleData
+{
+	UT_Vector2 position;
+	float scale;
+	UT_Vector3 offset;
+};
+
+
+void PoissionDiscSample(UT_Array<SampleData>& sampleList, 
+	GEO_PrimVolume* maskVolume,
+	float Width, float Height, float minSampleDist, float maxSampleDist ,
+	float randSeed, UT_Vector3& offset);

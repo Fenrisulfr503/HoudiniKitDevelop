@@ -27,6 +27,8 @@ houdini_generate_proto_headers( FILES SopMultiPoissionDiscSample.cpp )
 add_library( ${library_name} SHARED
     SopMultiPoissionDiscSample.cpp
     SopMultiPoissionDiscSample.h
+    GU_PoissionDiscSampling.cpp
+    GU_PoissionDiscSampling.h
 )
 
 # Link against the Houdini libraries, and add required include directories and
