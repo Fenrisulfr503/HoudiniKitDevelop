@@ -25,14 +25,14 @@
 #include <GU/GU_PrimVolume.h>
 using namespace HDK_Sample;
 
-const UT_StringHolder SOP_PoissionDiscSample::theSOPTypeName("hdk_poissondisc"_sh);
+const UT_StringHolder SOP_PoissionDiscSample::theSOPTypeName("sop_poissondisc"_sh);
 
 void
 newSopOperator(OP_OperatorTable *table)
 {
     table->addOperator(new OP_Operator(
         SOP_PoissionDiscSample::theSOPTypeName,   // Internal name
-        "PoissonDisc",                     // UI name
+        "SOP PoissonDisc",                     // UI name
         SOP_PoissionDiscSample::myConstructor,    // How to build the SOP
         SOP_PoissionDiscSample::buildTemplates(), // My parameters
         1,                          // Min # of sources
@@ -47,22 +47,20 @@ static const char *theDsFile = R"THEDSFILE(
     parm {
         name    "scale_range"
         label   "Scale Range"
-        type    vector
-        size    2           // 2 components in a vector2
-        default { "5" "10" } // Outside and inside radius defaults
-
+        type    float_minmax
+        size    2
+        default { "1" "2" }
+        range   { 0 10 }
+    }
+    parm {
+        name    "rand_seed"
+        label   "Random Seed"
+        type    integer
+        default { "5876" }
+        range   { 0 100000 }
     }
 }
 )THEDSFILE";
-
-int func(void *data, int index, fpreal64 time,
-				  const PRM_Template *tplate)
-{
-    std::cout << "test for button\n" ;
-    std::cout << time << std::endl; 
-    return 1;
-}
-
 
 PRM_Template*
 SOP_PoissionDiscSample::buildTemplates()
@@ -110,9 +108,10 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     // My code in theres.
     auto &&sopparms {cookparms.parms<SOP_PoissionDiscSampleParms>()} ;
     GU_Detail *detail = cookparms.gdh().gdpNC() ;
-	const GEO_Detail* firstInput  = cookparms.inputGeo(0)  ;
-  
+	const GEO_Detail* firstInput  = cookparms.inputGeo(0);
+    
     UT_Vector3 volumePrimMinPosition;
+    exint randSeed = sopparms.getRand_seed();
 	exint width, height;
     float volMinValue = sopparms.getScale_range().x();
     float volMaxValue = sopparms.getScale_range().y();
@@ -150,6 +149,8 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     // Keep volValue can,t to samll
     const float limitValue = 0.02;
+    int ContainerSize = (width / volMinValue) * (height / volMinValue);
+
     if(volMinValue < limitValue)
         volMinValue = limitValue;
     if(volMaxValue < limitValue)
@@ -161,12 +162,12 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     
     UT_Array<SampleData> sampleList;
-    sampleList.setCapacity(15000);
+    sampleList.setCapacity(ContainerSize);
 
     PoissionDiscSample(sampleList, 
 	vol,
 	width, height, volMinValue, volMaxValue ,
-	7585, volumePrimMinPosition);
+	randSeed, volumePrimMinPosition);
 
 
     exint pointNumbers { sampleList.size()};

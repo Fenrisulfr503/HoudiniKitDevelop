@@ -102,14 +102,20 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
 		vol = ( GEO_PrimVolume *)maskPrim;
     }
 
-    
+    struct ParallelData
+    {
+        UT_Array<SampleData> sampleArray;
+        UT_Vector3 offset;
+        exint pointNumber;
+    };
+
+
     if(pointsInput->getNumPoints())
     {
-        UT_Array<UT_Array<SampleData>> ParallelSampleList{};
+        UT_Array<ParallelData> ParallelSampleList{};
 
         ParallelSampleList.setSize(pointsInput->getNumPoints());
-        for(auto& i : ParallelSampleList)
-            i.setCapacity(500);
+        
 
         
         UTparallelFor(GA_SplittableRange(pointsInput->getPointRange()), [&detail, &pointsInput, &vol, &ParallelSampleList](const GA_SplittableRange &r)
@@ -121,6 +127,7 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
                 for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
                 {
                     UT_Vector3 origin = pointsInput->getPos3(ptoff);
+                    exint pointNumber = pointsInput->pointIndex(ptoff);
 
                     GA_ROHandleV2 sizeHandle(pointsInput->findPointAttribute("size"));
                     UT_Vector2 sizeVal{};
@@ -138,7 +145,12 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
 
                     origin[0] -= sizeVal.x() * 0.5;
                     origin[2] -= sizeVal.y() * 0.5;
-                    PoissionDiscSample(ParallelSampleList[ptoff], 
+
+                    ParallelSampleList[pointNumber].sampleArray.setCapacity(500);
+                    ParallelSampleList[pointNumber].offset = origin;
+                    ParallelSampleList[pointNumber].pointNumber = pointNumber;
+
+                    PoissionDiscSample(ParallelSampleList[pointNumber].sampleArray, 
                         vol,
                         sizeVal.x(), sizeVal.y(), scaleRangeVal.x(), scaleRangeVal.y() ,
                         ptoff + 12.45, origin);
@@ -147,24 +159,19 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
         } 
         );
 
-        size_t counts = 0;
-        for(auto &i : ParallelSampleList)
-        {
-            counts += i.size();
-        }
-
         // Merge all elements
         UT_Array<SampleData> totalSampleList{};
-        totalSampleList.setCapacity(counts);
+
+        //totalSampleList.setCapacity(counts);
         for(int i = 0; i < ParallelSampleList.size(); i++)
         {
-            for(auto &item : ParallelSampleList[i])
-            {
-                totalSampleList.append(item);
-            }
+            totalSampleList.concat(ParallelSampleList[i].sampleArray);
         }
 
+        size_t counts = totalSampleList.size();
+
         GA_Attribute* pscaleAttrib;
+            
         if(totalSampleList.size() != detail->getNumPoints())
         {
             detail->clearAndDestroy();
