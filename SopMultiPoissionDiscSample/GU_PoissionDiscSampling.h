@@ -11,7 +11,6 @@ struct SampleData
 {
 	UT_Vector2 position;
 	float scale;
-	UT_Vector3 offset;
 };
 
 

@@ -21,6 +21,7 @@
 #include <UT/UT_Options.h>
 #include <GA/GA_Attribute.h>
 #include <GEO/GEO_PrimVolume.h>
+#include <UT/UT_Quaternion.h>
 
 using namespace Fenrisulfr;
 
@@ -106,7 +107,9 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
     {
         UT_Array<SampleData> sampleArray;
         UT_Vector3 offset;
+		UT_Vector2 sizeRange;
         exint pointNumber;
+		UT_Vector4 orient;
     };
 
 
@@ -132,6 +135,7 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
                     GA_ROHandleV2 sizeHandle(pointsInput->findPointAttribute("size"));
                     UT_Vector2 sizeVal{};
                     UT_Vector2 scaleRangeVal{};
+					UT_Vector4 orient{};
                     if(sizeHandle.isValid())
                     {
                         sizeVal = sizeHandle.get(ptoff);
@@ -143,41 +147,57 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
                         scaleRangeVal = scaleRangeHandle.get(ptoff);
                     }
 
-                    origin[0] -= sizeVal.x() * 0.5;
-                    origin[2] -= sizeVal.y() * 0.5;
+					GA_ROHandleV4 orientHandle(pointsInput->findPointAttribute("orient"));
+					if (orientHandle.isValid())
+					{
+						orient = orientHandle.get(ptoff);
+					}
 
                     ParallelSampleList[pointNumber].sampleArray.setCapacity(500);
                     ParallelSampleList[pointNumber].offset = origin;
+					ParallelSampleList[pointNumber].sizeRange = sizeVal;
                     ParallelSampleList[pointNumber].pointNumber = pointNumber;
+					ParallelSampleList[pointNumber].orient = orient;
+
+					UT_Vector3 move{ origin };
+					move[0] -= sizeVal.x() * 0.5;
+					move[2] -= sizeVal.y() * 0.5;
 
                     PoissionDiscSample(ParallelSampleList[pointNumber].sampleArray, 
                         vol,
                         sizeVal.x(), sizeVal.y(), scaleRangeVal.x(), scaleRangeVal.y() ,
-                        ptoff + 12.45, origin);
+                        ptoff + 12.45, move);
                 }
             }
         } 
         );
 
         // Merge all elements
-        UT_Array<SampleData> totalSampleList{};
+		struct TotalSampleList
+		{
+			UT_Array<SampleData> dataArray;
+			UT_IntArray indexArray;
+		};
 
+		TotalSampleList totalSampleList{};
+		
         //totalSampleList.setCapacity(counts);
         for(int i = 0; i < ParallelSampleList.size(); i++)
         {
-            totalSampleList.concat(ParallelSampleList[i].sampleArray);
+            totalSampleList.dataArray.concat(ParallelSampleList[i].sampleArray);
+			totalSampleList.indexArray.appendMultiple(ParallelSampleList[i].pointNumber, 
+									ParallelSampleList[i].sampleArray.size());
         }
 
-        size_t counts = totalSampleList.size();
-
+        size_t counts = totalSampleList.dataArray.size();
         GA_Attribute* pscaleAttrib;
-            
-        if(totalSampleList.size() != detail->getNumPoints())
+        
+        if(counts != detail->getNumPoints())
         {
             detail->clearAndDestroy();
-            detail->appendPointBlock(totalSampleList.size());
+            detail->appendPointBlock(counts);
             pscaleAttrib = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1); 
-            detail->bumpDataIdsForAddOrRemove(true, true, true);
+			detail->bumpDataIdsForAddOrRemove(true, true, true);
         }
         else
         {
@@ -185,10 +205,52 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
             pscaleAttrib = detail->findPointAttribute("pscale");
         }
 
-        if(totalSampleList.size())
+        if(counts)
         {
-            
-            UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &totalSampleList](const GA_SplittableRange &r)
+			struct VolumeData
+			{
+				UT_StringHolder name;
+				GEO_PrimVolume* primVol;
+				GA_Attribute* attributeHandle;
+			};
+
+			using VolumeDataArray = UT_Array<VolumeData>;
+			VolumeDataArray volDataArr;
+
+			auto primRange = heightfieldInput->getPrimitiveRange();
+			GA_Offset primStart;
+			GA_Offset primEnd;
+			GA_ROHandleS attribName(heightfieldInput->findPrimitiveAttribute("name"));
+			for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);)
+			{
+				for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
+				{
+					GEO_Primitive* prim = (GEO_Primitive*)heightfieldInput->getPrimitive(primPtoff);
+
+					if (prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+					{
+						VolumeData volData;
+						volData.primVol = (GEO_PrimVolume *)prim;
+						volData.name = attribName.get(primPtoff);
+						std::cout << volData.name << std::endl;
+						GA_Attribute* attrib = detail->findFloatTuple(GA_ATTRIB_POINT, volData.name);
+						GA_RWHandleF attribHandle{ attrib };
+						if (!attribHandle.isValid())
+						{
+							std::cout << "Create Attrib." << std::endl;
+							attrib = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 0);
+						}
+							
+
+						volData.attributeHandle = attrib;
+						volDataArr.append(volData);
+					}
+				}
+			}
+			
+
+
+            UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &totalSampleList, &ParallelSampleList, &volDataArr](const GA_SplittableRange &r)
             {
                 GA_Offset start;
                 GA_Offset end;
@@ -196,10 +258,39 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
                 {
                     for (GA_Offset ptoff = start; ptoff < end; ++ptoff)
                     {
-                        UT_Vector3 pos {totalSampleList[ptoff].position.x() + totalSampleList[ptoff].offset.x(), 
-                                0, totalSampleList[ptoff].position.y() + totalSampleList[ptoff].offset.z()};
-                        detail->setPos3(ptoff, pos);
+                        UT_Vector3 pos {totalSampleList.dataArray[ptoff].position.x() ,
+                                0, totalSampleList.dataArray[ptoff].position.y() };
 
+						pos[0] -= ParallelSampleList[totalSampleList.indexArray[ptoff]].sizeRange[0] * 0.5;
+						pos[2] -= ParallelSampleList[totalSampleList.indexArray[ptoff]].sizeRange[1] * 0.5;
+
+						UT_Quaternion quat{ ParallelSampleList[totalSampleList.indexArray[ptoff]].orient };
+						pos = quat.rotate(pos);
+
+						pos[0] += ParallelSampleList[totalSampleList.indexArray[ptoff]].offset.x();
+						pos[2] += ParallelSampleList[totalSampleList.indexArray[ptoff]].offset.z();
+
+						
+
+						//Sample Volume value to points.
+						float heightVal = 0.0;
+						UT_StringHolder heightName{ "height" };
+						for (auto& i : volDataArr)
+						{
+							float val = i.primVol->getValue(pos);
+// 							GA_RWHandleF attribHandle{ i.attributeHandle };
+// 							if (i.name == heightName)
+// 							{
+// 								heightVal = val;
+// 							}
+// 							else
+// 							{
+// 								attribHandle.set(ptoff, val);
+// 							}
+							
+						}
+						pos[1] += heightVal;
+                        detail->setPos3(ptoff, pos);
                     }
                 }
             } 
