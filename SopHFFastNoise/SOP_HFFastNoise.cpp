@@ -22,7 +22,7 @@
 #include <UT/UT_Options.h>
 #include <GA/GA_Attribute.h>
 #include <GEO/GEO_PrimVolume.h>
-
+#include <UT/UT_Functor.h>
 #include "FastNoiseSIMD/FastNoiseSIMD.h"
 using namespace Fenrisulfr;
 
@@ -346,56 +346,62 @@ SOP_HFFastNoiseVerb::barPartial(UT_VoxelArrayF* arr, float* noiseSet, fpreal64 n
 // 
 // 	UT_VoxelProbeF		probe;
 // 	probe.setConstArray(arr);
+	UT_Functor2<float, float, float> opFunctor;
+
+	switch (myMode)
+	{
+	case SOP_HFFastNoiseParms::Mode::REPLACE:
+	{
+		opFunctor = [](float dst, float src)->float { 
+			return dst; };
+		break;
+	}
+	case SOP_HFFastNoiseParms::Mode::ADD:
+	{
+		opFunctor = [](float dst, float src)->float {
+			return src + dst; };
+		break;
+	}
+	case SOP_HFFastNoiseParms::Mode::SUBTRACT:
+	{
+		opFunctor = [](float dst, float src)->float {
+			return src - dst; };
+		break;
+	}
+	case SOP_HFFastNoiseParms::Mode::MULTIPLY:
+	{
+		opFunctor = [](float dst, float src)->float {
+			return src * dst; };
+		break;
+	}
+	case SOP_HFFastNoiseParms::Mode::MAX:
+	{
+		opFunctor = [](float dst, float src)->float {
+			return SYSmax(src , dst); };
+		break;
+	}
+	case SOP_HFFastNoiseParms::Mode::MIN:
+	{
+		opFunctor = [](float dst, float src)->float {
+			return SYSmin(src, dst); };
+		break;
+	}
+	default:
+		opFunctor = [](float dst, float src)->float {
+			return dst; };
+		break;
+	}
+
 	for (vit.rewind(); !vit.atEnd(); vit.advance())
 	{
 		if (vit.isStartOfTile() && boss->opInterrupt())
 			break;
 /*		probe.setIndex(vit);*/
 /*		std::cout << "Volume index " << vit.x() * resy * resz + vit.y() * resz + vit.z() << std::endl;*/
-		float val = noiseSet[ vit.x() * resy * resz + vit.y() * resz + vit.z()] * noiseScale;
+		float val = noiseSet[ vit.x() * resy * resz + vit.y() * resz + vit.z()] ;
+		val = SYSfit(val, -1, 1, 0, 1) * noiseScale ;
+		vit.setValue(opFunctor(val, vit.getValue()));
 
-		switch (myMode)
-		{
-		case SOP_HFFastNoiseParms::Mode::REPLACE:
-		{
-			vit.setValue(val);
-			break;
-		}
-		case SOP_HFFastNoiseParms::Mode::ADD:
-		{
-			val += vit.getValue();
-			vit.setValue(val);
-			break;
-		}
-		case SOP_HFFastNoiseParms::Mode::SUBTRACT:
-		{
-			val -= vit.getValue();
-			vit.setValue(val);
-			break;
-		}
-		case SOP_HFFastNoiseParms::Mode::MULTIPLY:
-		{
-			val *= vit.getValue();
-			vit.setValue(val);
-			break;
-		}
-		case SOP_HFFastNoiseParms::Mode::MAX:
-		{
-			val = SYSmax(val, vit.getValue());
-			vit.setValue(val);
-			break;
-		}
-		case SOP_HFFastNoiseParms::Mode::MIN:
-		{
-			val = SYSmax(val, vit.getValue());
-			vit.setValue(val);
-			break;
-		}
-		default:
-			break;
-		}
-
-		
 	}
 }
 
@@ -683,7 +689,7 @@ SOP_HFFastNoiseVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		myNoise->SetPerturbFractalLacunarity(turbLacunaroty);
 		myNoise->SetPerturbFractalGain(turbGain);
 		myNoise->SetPerturbNormaliseLength(turbNormalLength);
-
+		
 		//Set Axi Scale
 		myNoise->SetAxisScales(voxelLength, voxelLength, voxelLength);
 
