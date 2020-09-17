@@ -22,7 +22,6 @@
 #include <GEO/GEO_PrimVolume.h>
 #include <UT/UT_Math.h>
 
-#include <functional>
 using namespace Fenrisulfr;
 
 
@@ -120,8 +119,8 @@ public:
     static const SOP_NodeVerb::Register<SOP_HeightFieldCombineVerb> theVerb;
 
 	THREADED_METHOD5_CONST(SOP_HeightFieldCombineVerb, true, bar, UT_VoxelArrayF*, src, UT_VoxelArrayF*, dst, 
-		 int64, mode, bool, useFit, UT_SharedPtr<UT_Ramp>, ramp)
-	void  barPartial(UT_VoxelArrayF* src, UT_VoxelArrayF* dst, int64 mode,
+		 SOP_HeightFieldCombineParms::Mode_, mode, bool, useFit, UT_SharedPtr<UT_Ramp>, ramp)
+	void  barPartial(UT_VoxelArrayF* src, UT_VoxelArrayF* dst, SOP_HeightFieldCombineParms::Mode_ mode,
 		bool useFit, UT_SharedPtr<UT_Ramp> ramp, const UT_JobInfo &info )const;
 };
 
@@ -175,7 +174,7 @@ float NotFit01(float a)
 	return a;
 }
 
-void  SOP_HeightFieldCombineVerb::barPartial(UT_VoxelArrayF* src, UT_VoxelArrayF* dst, int64 mode,
+void  SOP_HeightFieldCombineVerb::barPartial(UT_VoxelArrayF* src, UT_VoxelArrayF* dst, SOP_HeightFieldCombineParms::Mode_ mode,
 	bool useFit, UT_SharedPtr<UT_Ramp> ramp, const UT_JobInfo &info)const
 {
 	UT_VoxelArrayIteratorF	vit;
@@ -239,7 +238,8 @@ void  SOP_HeightFieldCombineVerb::barPartial(UT_VoxelArrayF* src, UT_VoxelArrayF
 		float srcValue = fitFunctor(probe.getValue());
 		float result[4];
 		ramp->rampLookup(srcValue, result);
-
+		
+		// Result must fit range to 0 - 1
 		vit.setValue( SYSfit01( functor(vit.getValue(), result[0]) , 0, 1) );
 	}
 }
@@ -285,11 +285,9 @@ SOP_HeightFieldCombineVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 			heightfield = (GEO_PrimVolume *)prim;
 			UT_VoxelArrayWriteHandleF	heightFieldHandle = heightfield->getVoxelWriteHandle();
 			UT_VoxelArrayF *src = &(*heightFieldHandle);
-
-			bar(src, dst, i.mode_, i.clamp_, i.ramp);
+			SOP_HeightFieldCombineParms::Mode_ myMode = static_cast<SOP_HeightFieldCombineParms::Mode_>(i.mode_);
+			bar(src, dst, myMode, i.clamp_, i.ramp);
 		}
-		
-
 	}
 
 	detail->getPrimitiveList().bumpDataId();

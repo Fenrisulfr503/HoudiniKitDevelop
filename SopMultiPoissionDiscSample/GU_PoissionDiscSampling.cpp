@@ -29,7 +29,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
     }
 
 	UT_IntArray processList{};
-    processList.setCapacity(100);
+
 	uint initSeed1 = 1984 + randSeed;
     uint initSeed2 = 1995 + randSeed;
     UT_Vector2 firstPoint{ UTrandom(initSeed1) * Width, UTrandom(initSeed2) * Height };
@@ -38,7 +38,10 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 	float grey = maskVolume->getValue( samplePoint3 + offset);	
 	float minDistance;
 
+	// if(maxSampleDist < minSampleDist)
+	// 	grey = 1 - grey;
 	minDistance = SYSfit(grey, 0, 1, minSampleDist, maxSampleDist);
+
 	SampleData data { firstPoint,  minDistance};
 
     exint SamplelistIndex = sampleList.append(data);
@@ -110,7 +113,11 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
             float grey = maskVolume->getValue( samplePoint3 + offset);
 			
+			// if(maxSampleDist < minSampleDist)
+			// 	grey = 1 - grey;
 			minDistance = SYSfit(grey, 0, 1, minSampleDist, maxSampleDist);
+			// else
+			// 	minDistance = SYSfit(grey, 1, 0, minSampleDist, maxSampleDist);
 
             if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
