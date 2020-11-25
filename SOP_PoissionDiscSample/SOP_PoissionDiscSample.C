@@ -116,20 +116,18 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     float volMinValue = sopparms.getScale_range().x();
     float volMaxValue = sopparms.getScale_range().y();
 
-    GEO_PrimVolume *vol;
-    GEO_PrimVolume *heightVol;
-	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
-	const GEO_Primitive* heightPrim{ firstInput->findPrimitiveByName("height") };
+	// Keep MinValue To 0.1
+	volMinValue = SYSmax(volMinValue, 0.1);
 
-	if (maskPrim == nullptr || heightPrim  == nullptr)
+    GEO_PrimVolume *vol;
+	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
+
+
+	if (maskPrim == nullptr)
 	{
 		return;
 	}
 	
-    if (heightPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-	{
-        heightVol = ( GEO_PrimVolume *)heightPrim;
-    }
 	if (maskPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
 	{
 
@@ -146,15 +144,13 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		volumePrimMinPosition[0] -= width * 0.5;
 		volumePrimMinPosition[2] -= height * 0.5;
 	}
+	else
+	{
+		return;
+	}
 
     // Keep volValue can,t to samll
-    const float limitValue = 0.02;
     int ContainerSize = (width / volMinValue) * (height / volMinValue);
-
-    if(volMinValue < limitValue)
-        volMinValue = limitValue;
-    if(volMaxValue < limitValue)
-        volMaxValue = limitValue;
 
     UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
     if (boss.wasInterrupted())
@@ -200,31 +196,31 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     VolumeDataArray volDataArr;
     //Set for all volume value
 
-    auto primRange = firstInput->getPrimitiveRange();
-    GA_Offset primStart;
-    GA_Offset primEnd;
-    GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
-    for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
-    {
-        for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
-        {
-            GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
-
-            if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-            {
-                VolumeData volData;
-                volData.primVol = ( GEO_PrimVolume *)prim;
-                volData.name = attribName.get(prim->getMapOffset());
-                volData.volumeAttribute = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1); 
-                volDataArr.append(volData);
-            }
-        }
-    }
+//     auto primRange = firstInput->getPrimitiveRange();
+//     GA_Offset primStart;
+//     GA_Offset primEnd;
+//     GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
+//     for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
+//     {
+//         for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
+//         {
+//             GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
+// 
+//             if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+//             {
+//                 VolumeData volData;
+//                 volData.primVol = ( GEO_PrimVolume *)prim;
+//                 volData.name = attribName.get(prim->getMapOffset());
+//                 volData.volumeAttribute = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1); 
+//                 volDataArr.append(volData);
+//             }
+//         }
+//     }
 	
 	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
     detail->getP()->bumpDataId();
 
-    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  heightVol, &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
     {
         GA_Offset start;
         GA_Offset end;
@@ -234,25 +230,21 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
             {
                 // Set Height Value to P
                 UT_Vector3 pos{sampleList[ptoff].position[0], 0, sampleList[ptoff].position[1]};
-				
                 pos += volumePrimMinPosition;
-                pos[1] = heightVol->getValue(pos);
-				pos[1] += pointPosition[1];
-
 				UT_Vector3 samplePosition{ pos };
 				samplePosition[1] = pointPosition[1];
 
                 detail->setPos3(ptoff, pos );
                 pscaleValueHandle.set(ptoff, sampleList[ptoff].scale);
 
-                GA_RWHandleF volValueHandle;
-                for(auto &volData : volDataArr)
-                {
-                    volValueHandle.bind(volData.volumeAttribute);
-
-                    float val = volData.primVol->getValue(samplePosition);
-                    volValueHandle.set(ptoff, val);
-                }
+//                 GA_RWHandleF volValueHandle;
+//                 for(auto &volData : volDataArr)
+//                 {
+//                     volValueHandle.bind(volData.volumeAttribute);
+// 
+//                     float val = volData.primVol->getValue(samplePosition);
+//                     volValueHandle.set(ptoff, val);
+//                 }
 
             }
         }

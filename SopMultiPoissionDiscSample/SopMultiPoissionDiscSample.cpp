@@ -190,23 +190,24 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
         }
 
         size_t counts = totalSampleList.dataArray.size();
-        GA_Attribute* pscaleAttrib;
-        
-        if(counts != detail->getNumPoints())
-        {
-            detail->clearAndDestroy();
-            detail->appendPointBlock(counts);
-            pscaleAttrib = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1); 
-			detail->bumpDataIdsForAddOrRemove(true, true, true);
-        }
-        else
-        {
-            detail->getP()->bumpDataId();
-            pscaleAttrib = detail->findPointAttribute("pscale");
-        }
-
+       
         if(counts)
         {
+			GA_Attribute* pscaleAttrib;
+			if (counts != detail->getNumPoints())
+			{
+				detail->clearAndDestroy();
+				detail->appendPointBlock(counts);
+				pscaleAttrib = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1);
+
+				detail->bumpDataIdsForAddOrRemove(true, true, true);
+			}
+			else
+			{
+				detail->getP()->bumpDataId();
+				pscaleAttrib = detail->findPointAttribute("pscale");
+			}
+
 			struct VolumeData
 			{
 				UT_StringHolder name;
@@ -232,25 +233,24 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
 						VolumeData volData;
 						volData.primVol = (GEO_PrimVolume *)prim;
 						volData.name = attribName.get(primPtoff);
-						std::cout << volData.name << std::endl;
+						//std::cout << volData.name << std::endl;
 						GA_Attribute* attrib = detail->findFloatTuple(GA_ATTRIB_POINT, volData.name);
 						GA_RWHandleF attribHandle{ attrib };
 						if (!attribHandle.isValid())
 						{
-							std::cout << "Create Attrib." << std::endl;
-							attrib = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 0);
+							//sstd::cout << "Create Attrib." << std::endl;
+							attrib = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1);
 						}
-							
-
+						
 						volData.attributeHandle = attrib;
 						volDataArr.append(volData);
 					}
 				}
 			}
 			
+			
 
-
-            UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &totalSampleList, &ParallelSampleList, &volDataArr](const GA_SplittableRange &r)
+            UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleAttrib, &totalSampleList, &ParallelSampleList, &volDataArr](const GA_SplittableRange &r)
             {
                 GA_Offset start;
                 GA_Offset end;
@@ -274,21 +274,27 @@ SopMultiPoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) c
 
 						//Sample Volume value to points.
 						float heightVal = 0.0;
+						UT_Vector3 samplePosition{ pos };
+						samplePosition[1] = 0;
 						UT_StringHolder heightName{ "height" };
 						for (auto& i : volDataArr)
 						{
-							float val = i.primVol->getValue(pos);
-// 							GA_RWHandleF attribHandle{ i.attributeHandle };
-// 							if (i.name == heightName)
-// 							{
-// 								heightVal = val;
-// 							}
-// 							else
-// 							{
-// 								attribHandle.set(ptoff, val);
-// 							}
+							float val = i.primVol->getValue(samplePosition);
+							GA_RWHandleF attribHandle{ i.attributeHandle };
+							if (i.name == heightName)
+							{
+								heightVal = val;
+							}
+							else
+							{
+								attribHandle.set(ptoff, val);
+							}
 							
 						}
+
+						GA_RWHandleF scaleHandle{ pscaleAttrib };
+						scaleHandle.set(ptoff, totalSampleList.dataArray[ptoff].scale);
+
 						pos[1] += heightVal;
                         detail->setPos3(ptoff, pos);
                     }

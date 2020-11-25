@@ -38,7 +38,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 	float grey = maskVolume->getValue( samplePoint3 + offset);	
 	float minDistance;
 
-	minDistance = SYSfit(grey, 0, 1, minSampleDist, maxSampleDist);
+	minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist );
 	SampleData data { firstPoint,  minDistance};
 
     exint SamplelistIndex = sampleList.append(data);
@@ -49,14 +49,16 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 	auto GeneratPoint = [](UT_Vector2& point, float mindist, int id) -> UT_Vector2
     {
         uint i1 = point[0] * 1984 + 115 + id ;
-        uint i2 = point[1] * 1995 + 775 + id ;
-        float r1 {UTrandom(i1)};
-        float r2 {UTrandom(i2)};
-        float radius {mindist * (r1 + 1)} ;
+        uint i2 = point[1] * 2885 + 775 + id ;
+        float r1 { UTfastRandom(i1) };
+        float r2 { UTfastRandom(i2) };
+
+        float radius {mindist * (r1 + 1) * 0.65f} ;
         float angle  = 2 * 3.1415 * r2 ;
 
         float newX {point[0] + radius * cos(angle)};
         float newY {point[1] + radius * sin(angle)};
+
         return {newX, newY};
 
     };
@@ -79,7 +81,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
                     
                     for(auto ptindex : indexArr)
                     {
-						if( point.distance( sampleList[ptindex].position ) < (mindist * 0.5 + sampleList[ptindex].scale * 0.5) )
+						if( point.distance( sampleList[ptindex].position ) < (0.75 * (mindist * 0.5 + sampleList[ptindex].scale * 0.5 )) )
 						{
 							return false;
 						}
@@ -101,16 +103,15 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
         int precessIndex { processList[processList.size() - 1] } ;
         processList.removeLast();
-
+		UT_Vector2 newPoint;
         for (size_t i = 0; i < sampleCounts; i++)
         {
 
-            UT_Vector2 newPoint {GeneratPoint(sampleList[precessIndex].position, sampleList[precessIndex].scale, i)};
+            newPoint = GeneratPoint(sampleList[precessIndex].position, sampleList[precessIndex].scale, i);
             UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
-
             float grey = maskVolume->getValue( samplePoint3 + offset);
 			
-			minDistance = SYSfit(grey, 0, 1, minSampleDist, maxSampleDist);
+			minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist);
 
             if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
