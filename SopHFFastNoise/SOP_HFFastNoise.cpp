@@ -35,7 +35,7 @@ newSopOperator(OP_OperatorTable *table)
 {
     OP_Operator* op =  new OP_Operator(
         SOP_HFFastNoise::theSOPTypeName,   // Internal name
-        "FR_HFFastNoise",                     // UI name
+        "Sop VolumeFastNoise",                     // UI name
         SOP_HFFastNoise::myConstructor,    // How to build the SOP
         SOP_HFFastNoise::buildTemplates(), // My parameters
         1,                          // Min # of sources

@@ -176,7 +176,6 @@ Sop_VolumeClampVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
         bar(voxelArr, threshold);
     }
-
-
+    
     detail->getPrimitiveList().bumpDataId();
 }

@@ -6,10 +6,10 @@
 
 void PoissionDiscSample(UT_Array<SampleData>& sampleList, 
 	GEO_PrimVolume* maskVolume,
-	float Width, float Height, float minSampleDist, float maxSampleDist ,
+	float Width, float Height, float minSampleDist, float maxSampleDist ,float densityMultiplu,
 	float randSeed, UT_Vector3& offset)
 {
-    float cellSize  = maxSampleDist / sqrt(2) ;
+    float cellSize  = maxSampleDist * densityMultiplu / sqrt(2) ;
 
     exint gridwidth  {int(Width / cellSize) + 1} ;
     exint gridheight {int(Height / cellSize) + 1} ;
@@ -37,8 +37,8 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
 	float grey = maskVolume->getValue( samplePoint3 + offset);	
 	float minDistance;
-
-	minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist );
+	
+	minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist ) * densityMultiplu;
 	SampleData data { firstPoint,  minDistance};
 
     exint SamplelistIndex = sampleList.append(data);
@@ -111,8 +111,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
             UT_Vector3 samplePoint3(newPoint[0], 0, newPoint[1]);
             float grey = maskVolume->getValue( samplePoint3 + offset);
 			
-			minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist);
-
+			minDistance = SYSfit(grey, 0, 1, maxSampleDist, minSampleDist) * densityMultiplu;
             if(IsVaild(sampleList, grid, newPoint, minDistance, cellSize))
             {
 				data.position = newPoint;

@@ -16,5 +16,5 @@ struct SampleData
 
 void PoissionDiscSample(UT_Array<SampleData>& sampleList, 
 	GEO_PrimVolume* maskVolume,
-	float Width, float Height, float minSampleDist, float maxSampleDist ,
+	float Width, float Height, float minSampleDist, float maxSampleDist , float densityMultiplu,
 	float randSeed, UT_Vector3& offset);

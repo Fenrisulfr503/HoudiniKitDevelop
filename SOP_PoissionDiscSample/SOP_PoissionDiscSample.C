@@ -50,7 +50,14 @@ static const char *theDsFile = R"THEDSFILE(
         type    float_minmax
         size    2
         default { "1" "2" }
-        range   { 0 10 }
+        range   { 0.1! 20 }
+    }
+	parm {
+        name    "density_multiply"
+        label   "Density Multiply"
+        type    float
+        default { "1" }
+        range   { 0.5! 20 }
     }
     parm {
         name    "rand_seed"
@@ -115,7 +122,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	exint width, height;
     float volMinValue = sopparms.getScale_range().x();
     float volMaxValue = sopparms.getScale_range().y();
-
+	float densityMultiply = sopparms.getDensity_multiply();
 	// Keep MinValue To 0.1
 	volMinValue = SYSmax(volMinValue, 0.1);
 
@@ -162,7 +169,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
     PoissionDiscSample(sampleList, 
 	vol,
-	width, height, volMinValue, volMaxValue ,
+	width, height, volMinValue, volMaxValue ,densityMultiply,
 	randSeed, volumePrimMinPosition);
 
 
@@ -220,7 +227,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
     detail->getP()->bumpDataId();
 
-    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition](const GA_SplittableRange &r)
+    UTparallelFor(GA_SplittableRange(detail->getPointRange()), [&detail, &pscaleValueHandle, &sampleList,  &volumePrimMinPosition, firstInput, &volDataArr, &pointPosition, &densityMultiply](const GA_SplittableRange &r)
     {
         GA_Offset start;
         GA_Offset end;
@@ -235,7 +242,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 				samplePosition[1] = pointPosition[1];
 
                 detail->setPos3(ptoff, pos );
-                pscaleValueHandle.set(ptoff, sampleList[ptoff].scale);
+                pscaleValueHandle.set(ptoff, sampleList[ptoff].scale / densityMultiply);
 
 //                 GA_RWHandleF volValueHandle;
 //                 for(auto &volData : volDataArr)
