@@ -133,11 +133,11 @@ SopReadJsonToGeoTable::cookVerb() const
 }
 
 
-void ByTypeAddAttributes(GU_Detail *detail, GA_Attribute* pointAttributePtr, 
-					const UT_JSONValue* iterValuePtr, const UT_StringHolder& jsonKey,
-					UT_Map<UT_StringHolder, GA_Attribute*>& attributeTable)
+void ByTypeAddAttributes(GU_Detail *detail, 
+					const UT_JSONValue* iterValuePtr, const UT_StringHolder& jsonKey)
 {
 
+	GA_Attribute* pointAttributePtr;
 	switch (iterValuePtr->getType())
 	{
 	case UT_JSONValue::Type::JSON_STRING:
@@ -183,10 +183,6 @@ void ByTypeAddAttributes(GU_Detail *detail, GA_Attribute* pointAttributePtr,
 		break;
 	}
 
-	if (pointAttributePtr)
-	{
-		attributeTable.emplace(jsonKey, pointAttributePtr);
-	}
 }
 
 /// This is the function that does the actual work.
@@ -200,53 +196,100 @@ SopReadJsonToGeoTableVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
 	UT_StringHolder filepath = sopparms.getJson_path();
 
-	GA_RWHandleF  floatValueHandle;
-	GA_RWHandleV3 vector3ValueHandle;
-	GA_RWHandleS  stringValueHandle;
-
-
-	UT_Map<UT_StringHolder, GA_Attribute*> attributeTable;
-	
-	GA_Attribute* pointAttributePtr = nullptr;
-
-
-	// initilization json data struct.
+	// 0,initilization json data struct.
 	UT_JSONValue value;
 	if (!value.loadFromFile(filepath))
 	{
 		cookparms.sopAddError(SOP_MESSAGE, "Json file open failed.");
 		return;
 	}
-
-	// 1, Parse Value Type
-	UT_JSONValue*		iterValuePtr;
-	UT_JSONValueArray*  jsonArrayPtr;
-	UT_JSONValueMap*	jsonMapPtr;
-	UT_StringArray      jsonArray;
-	jsonArrayPtr = value.getArray();
-
-	exint idx = 0;
-
-
-	iterValuePtr = jsonArrayPtr->get(idx);
-	jsonMapPtr = iterValuePtr->getMap();
-
 	
-	jsonMapPtr->getKeys(jsonArray);
-	for (UT_StringHolder& jsonKey : jsonArray)
+	UT_Map<UT_StringHolder, UT_Array<UT_JSONValue*>> myDataMap;
+
+	// 1,Create attribute types
+	UT_JSONValue* iterValue;
+	UT_JSONValueArray* allValArray;
+	allValArray = value.getArray();
+	auto jsonMap = allValArray->get(0)->getMap();
+	UT_StringArray parameterKeys;
+	jsonMap->getKeys(parameterKeys);
+	UT_StringArray assetKeys;
+	
+	UT_JSONValueMap* assetMap = jsonMap->get("Asset")->getMap();
+	assetMap->getKeys(assetKeys);
+	UT_JSONValueArray testArray;
+	for (auto& assetKey : assetKeys)
 	{
-		//UT_StringHolder& jsonKey = jsonArray[0];
-		iterValuePtr = jsonMapPtr->get(jsonKey);
-		std::cout << "Key   : " << jsonKey << "\n";
-		ByTypeAddAttributes(detail, pointAttributePtr, iterValuePtr, jsonKey, attributeTable);
-		if (jsonKey == "Asset")
+		iterValue = assetMap->get(assetKey);
+		UT_StringArray assetAttribKeys;
+		iterValue->getMap()->getKeys(assetAttribKeys);
+		
+		for (auto& assetAttribKey : assetAttribKeys)
 		{
-			UT_JSONValueMap* assetMap = iterValuePtr->getMap();
+			
+			UT_JSONValue* assetAttribVal = iterValue->getMap()->get(assetAttribKey);
+			myDataMap[assetAttribKey].append(assetAttribVal);
+		}
+
+		for (auto& parameterKey : parameterKeys)
+		{
+			myDataMap[parameterKey].append(jsonMap->get(parameterKey)->getMap()->get(assetKey));
 		}
 	}
 
-	for (const auto& p : attributeTable) {
-		std::cout << p.first << ";" << std::endl;
+	for (auto& myPair : myDataMap)
+	{
+		std::cout << "Key : " << myPair.first;
+		for (UT_JSONValue* jsonVal : myPair.second)
+		{
+
+			switch (jsonVal->getType())
+			{
+			case UT_JSONValue::Type::JSON_STRING:
+			{
+				std::cout << "    Type : " << jsonVal->getS() << std::endl;
+				break;
+			}
+			case UT_JSONValue::Type::JSON_INT:
+			{
+				std::cout << "    Type : " << jsonVal->getF() << std::endl;
+				break;
+			}
+			case UT_JSONValue::Type::JSON_REAL:
+			{
+				std::cout << "    Type : " << jsonVal->getF() << std::endl;
+				break;
+			}
+			case UT_JSONValue::Type::JSON_MAP:
+			{
+
+				if(jsonVal->getMap()->entries() == 2)
+				{
+					std::cout << "  X  "<<jsonVal->getMap()->get("X")->getF();
+					std::cout << "  Y  "<<jsonVal->getMap()->get("Y")->getF() << std::endl;
+ 				}
+				else if(jsonVal->getMap()->entries() == 3)
+				{
+					std::cout << "  X  " << jsonVal->getMap()->get("X")->getF();
+					std::cout << "  Y  " << jsonVal->getMap()->get("Y")->getF();
+					std::cout << "  Z  " << jsonVal->getMap()->get("Z")->getF() << std::endl;
+				}
+				else
+				{
+					if( myPair.first == "Asset")
+					std::cout << jsonVal->getS() << std::endl;
+				}
+
+
+				break;
+			}
+			default:
+				break;
+			}
+
+
+		}
 	}
-	
+
+
 }
