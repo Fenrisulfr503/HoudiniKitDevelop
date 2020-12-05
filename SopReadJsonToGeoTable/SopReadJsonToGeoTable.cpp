@@ -133,58 +133,6 @@ SopReadJsonToGeoTable::cookVerb() const
 }
 
 
-void ByTypeAddAttributes(GU_Detail *detail, 
-					const UT_JSONValue* iterValuePtr, const UT_StringHolder& jsonKey)
-{
-
-	GA_Attribute* pointAttributePtr;
-	switch (iterValuePtr->getType())
-	{
-	case UT_JSONValue::Type::JSON_STRING:
-	{
-		pointAttributePtr = detail->addStringTuple(GA_ATTRIB_POINT, jsonKey, 1);
-		std::cout << "Value : " << iterValuePtr->getS() << "\n";
-		break;
-	}
-	case UT_JSONValue::Type::JSON_INT:
-	{
-		pointAttributePtr = detail->addFloatTuple(GA_ATTRIB_POINT, jsonKey, 1);
-		std::cout << "Value : " << iterValuePtr->getI() << "\n";
-		break;
-	}
-	case UT_JSONValue::Type::JSON_REAL:
-	{
-		pointAttributePtr = detail->addFloatTuple(GA_ATTRIB_POINT, jsonKey, 1);
-		std::cout << "Value : " << iterValuePtr->getF() << "\n";
-		break;
-	}
-	case UT_JSONValue::Type::JSON_ARRAY:
-	{
-		break;
-	}
-	case UT_JSONValue::Type::JSON_MAP:
-	{
-
-		UT_JSONValueMap* myJsonMapPtr = iterValuePtr->getMap();
-		if (myJsonMapPtr->entries() == 3)
-		{
-			pointAttributePtr = detail->addFloatTuple(GA_ATTRIB_POINT, jsonKey, 3);
-		}
-		if (myJsonMapPtr->entries() == 2)
-		{
-			pointAttributePtr = detail->addFloatTuple(GA_ATTRIB_POINT, jsonKey, 2);
-		}
-
-
-		//std::cout << "Value : " << iterValuePtr->getF() << "\n";
-		break;
-	}
-	default:
-		break;
-	}
-
-}
-
 /// This is the function that does the actual work.
 void
 SopReadJsonToGeoTableVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
@@ -195,101 +143,160 @@ SopReadJsonToGeoTableVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     GU_Detail *detail = cookparms.gdh().gdpNC();
 
 	UT_StringHolder filepath = sopparms.getJson_path();
-
-	// 0,initilization json data struct.
-	UT_JSONValue value;
-	if (!value.loadFromFile(filepath))
+	UT_JSONValue parseFileValue;
+	if (!parseFileValue.loadFromFile(filepath))
 	{
 		cookparms.sopAddError(SOP_MESSAGE, "Json file open failed.");
 		return;
 	}
-	
-	UT_Map<UT_StringHolder, UT_Array<UT_JSONValue*>> myDataMap;
 
-	// 1,Create attribute types
-	UT_JSONValue* iterValue;
-	UT_JSONValueArray* allValArray;
-	allValArray = value.getArray();
-	auto jsonMap = allValArray->get(0)->getMap();
-	UT_StringArray parameterKeys;
-	jsonMap->getKeys(parameterKeys);
-	UT_StringArray assetKeys;
-	
-	UT_JSONValueMap* assetMap = jsonMap->get("Asset")->getMap();
-	assetMap->getKeys(assetKeys);
-	UT_JSONValueArray testArray;
-	for (auto& assetKey : assetKeys)
+// Step 1 : Gather all data int tables.
+	UT_Map<UT_StringHolder, UT_Array<UT_JSONValue*>> myAssetTable;
+	UT_Array<UT_StringHolder> myAssetStaticMeshInfo;
+
+	UT_JSONValueArray* myAssetTableArray = parseFileValue.getArray();
+	for (exint i = 0; i < myAssetTableArray->entries(); i++)
 	{
-		iterValue = assetMap->get(assetKey);
-		UT_StringArray assetAttribKeys;
-		iterValue->getMap()->getKeys(assetAttribKeys);
-		
-		for (auto& assetAttribKey : assetAttribKeys)
-		{
-			
-			UT_JSONValue* assetAttribVal = iterValue->getMap()->get(assetAttribKey);
-			myDataMap[assetAttribKey].append(assetAttribVal);
-		}
+		UT_JSONValueMap* myAssetTableMap = myAssetTableArray->get(i)->getMap();
+		UT_StringArray myAssetTableKeys;
+		myAssetTableMap->getKeyReferences(myAssetTableKeys);
 
-		for (auto& parameterKey : parameterKeys)
+		for (UT_StringHolder& myAssetTableKey : myAssetTableKeys)
 		{
-			myDataMap[parameterKey].append(jsonMap->get(parameterKey)->getMap()->get(assetKey));
+			if (myAssetTableKey == "Asset")
+			{
+				UT_JSONValueMap* myAssetMap = myAssetTableMap->get(myAssetTableKey)->getMap();
+
+				UT_StringArray myAssetKeys;
+				myAssetMap->getKeyReferences(myAssetKeys);
+				for (UT_StringHolder& myAssetKey : myAssetKeys)
+				{
+					UT_JSONValueMap* myAssetAttribMap = myAssetMap->get(myAssetKey)->getMap();
+
+					UT_StringArray myAssetAttribKeys;
+					myAssetAttribMap->getKeyReferences(myAssetAttribKeys);
+					for (UT_StringHolder& myAssetAttribKey : myAssetAttribKeys)
+					{
+						myAssetTable[myAssetAttribKey].append(myAssetAttribMap->get(myAssetAttribKey));
+					}
+					for (UT_StringHolder& tempAssetTableKey : myAssetTableKeys)
+					{
+						if (tempAssetTableKey == "Asset")
+						{
+							myAssetStaticMeshInfo.append(myAssetKey);
+						}
+						else
+						{
+							myAssetTable[tempAssetTableKey].append(myAssetTableMap->get(tempAssetTableKey));
+						}
+					}
+				}
+			}
 		}
 	}
 
-	for (auto& myPair : myDataMap)
-	{
-		std::cout << "Key : " << myPair.first;
-		for (UT_JSONValue* jsonVal : myPair.second)
-		{
+// Step 2 : create Point and Attribute for geometry.
+	exint assetNumbers = myAssetStaticMeshInfo.entries();
 
-			switch (jsonVal->getType())
+	GA_Offset start_ptoff;
+	if (detail->getNumPoints() != assetNumbers)
+	{
+		detail->clearAndDestroy();
+		start_ptoff = detail->appendPointBlock(assetNumbers);
+		detail->bumpDataIdsForAddOrRemove(true, true, true);
+	}
+	else
+	{
+		start_ptoff = detail->pointOffset(GA_Index(0));
+		detail->getP()->bumpDataId();
+	}
+
+	//
+	UT_AutoInterrupt boss("ReBuilding JSON Object");
+	if (boss.wasInterrupted())
+		return;
+
+	for (auto& myPairs : myAssetTable)
+	{
+		if (myPairs.second.entries())
+		{
+			switch (myPairs.second[0]->getType())
 			{
 			case UT_JSONValue::Type::JSON_STRING:
 			{
-				std::cout << "    Type : " << jsonVal->getS() << std::endl;
+				GA_RWHandleS myStringAttribHandle (detail->addStringTuple(GA_ATTRIB_POINT, myPairs.first, 1));
+
+				for (exint i = 0; i < myPairs.second.entries(); ++i)
+				{
+					myStringAttribHandle.set(start_ptoff + i, myPairs.second[i]->getS());
+				}
 				break;
 			}
 			case UT_JSONValue::Type::JSON_INT:
 			{
-				std::cout << "    Type : " << jsonVal->getF() << std::endl;
+				GA_RWHandleF myStringAttribHandle(detail->addFloatTuple(GA_ATTRIB_POINT, myPairs.first, 1));
+				for (exint i = 0; i < myPairs.second.entries(); ++i)
+				{
+					myStringAttribHandle.set(start_ptoff + i, static_cast<float>(myPairs.second[i]->getI()));
+				}
 				break;
 			}
 			case UT_JSONValue::Type::JSON_REAL:
 			{
-				std::cout << "    Type : " << jsonVal->getF() << std::endl;
+				GA_RWHandleF myStringAttribHandle(detail->addFloatTuple(GA_ATTRIB_POINT, myPairs.first, 1));
+				for (exint i = 0; i < myPairs.second.entries(); ++i)
+				{
+					myStringAttribHandle.set(start_ptoff + i, myPairs.second[i]->getF());
+				}
 				break;
 			}
 			case UT_JSONValue::Type::JSON_MAP:
 			{
+				if (myPairs.second[0]->getMap()->entries() == 2)
+				{
+					GA_RWHandleV2 myStringAttribHandle(detail->addFloatTuple(GA_ATTRIB_POINT, myPairs.first, 2));
+					for (exint i = 0; i < myPairs.second.entries(); ++i)
+					{
+						UT_Vector2 val(myPairs.second[i]->getMap()->get("X")->getF(), 
+							myPairs.second[i]->getMap()->get("Y")->getF());
+						myStringAttribHandle.set(start_ptoff + i, val);
+					}
 
-				if(jsonVal->getMap()->entries() == 2)
+				}
+				else if (myPairs.second[0]->getMap()->entries() == 3)
 				{
-					std::cout << "  X  "<<jsonVal->getMap()->get("X")->getF();
-					std::cout << "  Y  "<<jsonVal->getMap()->get("Y")->getF() << std::endl;
- 				}
-				else if(jsonVal->getMap()->entries() == 3)
-				{
-					std::cout << "  X  " << jsonVal->getMap()->get("X")->getF();
-					std::cout << "  Y  " << jsonVal->getMap()->get("Y")->getF();
-					std::cout << "  Z  " << jsonVal->getMap()->get("Z")->getF() << std::endl;
+					GA_RWHandleV3 myStringAttribHandle(detail->addFloatTuple(GA_ATTRIB_POINT, myPairs.first, 3));
+					for (exint i = 0; i < myPairs.second.entries(); ++i)
+					{
+						UT_Vector3 val(myPairs.second[i]->getMap()->get("X")->getF(),
+							myPairs.second[i]->getMap()->get("Y")->getF(),
+							myPairs.second[i]->getMap()->get("Z")->getF());
+						myStringAttribHandle.set(start_ptoff + i, val);
+					}
 				}
 				else
 				{
-					if( myPair.first == "Asset")
-					std::cout << jsonVal->getS() << std::endl;
 				}
-
-
+				break;
+			}
+			case UT_JSONValue::Type::JSON_ARRAY:
+			{
 				break;
 			}
 			default:
 				break;
 			}
-
-
 		}
+
 	}
 
+	// add for Asset Attribute.
+	detail->addStringTuple(GA_ATTRIB_POINT, "Asset", 1);
+	GA_RWHandleS assetAttributeHandle(detail->findPointAttribute("Asset"));
+
+	for (exint i = 0; i < myAssetStaticMeshInfo.entries(); ++i)
+	{
+		assetAttributeHandle.set(start_ptoff + i, myAssetStaticMeshInfo[i]);
+	}
 
 }
