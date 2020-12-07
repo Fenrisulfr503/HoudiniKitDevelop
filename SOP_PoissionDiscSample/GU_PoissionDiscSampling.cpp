@@ -16,7 +16,7 @@ struct GridTable
 
 	UT_IntArray& getByIndex(exint w, exint h)
 	{
-		exint idx = myWidth * h + w - 1 ;
+		exint idx = myWidth * h + w ;
 		return data[idx];
 	}
 

@@ -148,7 +148,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		vol->indexToPos(1, 0, 0, p2);
 		float voxelLength = (p1 - p2).length();
 
-		width = (resx-1) * voxelLength; height = (resy-1) * voxelLength;
+		width = (resy) * voxelLength; height = (resx) * voxelLength;
 		volumePrimMinPosition = firstInput->getPos3(vol->getPointOffset(0));
 		volumePrimMinPosition[0] -= width * 0.5;
 		volumePrimMinPosition[2] -= height * 0.5;
@@ -159,14 +159,14 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 		return;
 	}
 
-    // Keep volValue can,t to samll
-    int ContainerSize = (width / volMinValue) * (height / volMinValue);
+    // Keep volValue can,t to small
+    exint ContainerSize = (width / volMinValue) * (height / volMinValue);
 
-    UT_AutoInterrupt boss("Start Cacl Poisson Dic Sampleing.");
+    UT_AutoInterrupt boss("Start calculat Poisson DiscSampleing.");
     if (boss.wasInterrupted())
         return;
 
-    
+
     UT_Array<SampleData> sampleList;
     sampleList.setCapacity(ContainerSize);
 
