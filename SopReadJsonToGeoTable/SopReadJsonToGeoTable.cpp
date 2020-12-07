@@ -279,6 +279,15 @@ SopReadJsonToGeoTableVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 				}
 				break;
 			}
+			case UT_JSONValue::Type::JSON_BOOL:
+			{
+				GA_RWHandleI myStringAttribHandle(detail->addIntTuple(GA_ATTRIB_POINT, myPairs.first, 1));
+				for (exint i = 0; i < myPairs.second.entries(); ++i)
+				{
+					myStringAttribHandle.set(start_ptoff + i, myPairs.second[i]->getI());
+				}
+				break;
+			}
 			case UT_JSONValue::Type::JSON_ARRAY:
 			{
 				break;

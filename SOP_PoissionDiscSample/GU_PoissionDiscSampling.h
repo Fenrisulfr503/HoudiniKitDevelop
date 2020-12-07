@@ -5,7 +5,10 @@
 
 
 class GEO_PrimVolume;
-using GridArray = UT_Array<UT_Array<UT_IntArray>>;
+//using GridArray = UT_Array<UT_IntArray>;
+class GridTable;
+
+
 
 struct SampleData
 {

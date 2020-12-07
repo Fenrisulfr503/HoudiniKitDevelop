@@ -17,6 +17,7 @@
 #include <SYS/SYS_Math.h>
 #include <limits.h>
 
+#include <UT/UT_Vector.h>
 #include <UT/UT_Quaternion.h>
 #include <UT/UT_Options.h>
 #include <GA/GA_Attribute.h>
@@ -117,28 +118,29 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     GU_Detail *detail = cookparms.gdh().gdpNC() ;
 	const GEO_Detail* firstInput  = cookparms.inputGeo(0);
     
-    UT_Vector3 volumePrimMinPosition;
-    exint randSeed = sopparms.getRand_seed();
-	exint width, height;
-    float volMinValue = sopparms.getScale_range().x();
-    float volMaxValue = sopparms.getScale_range().y();
+	exint randSeed = sopparms.getRand_seed();
+	float volMinValue = sopparms.getScale_range().x();
+	float volMaxValue = sopparms.getScale_range().y();
 	float densityMultiply = sopparms.getDensity_multiply();
+
+    UT_Vector3 volumePrimMinPosition;
+	exint width, height;
+ 
 	// Keep MinValue To 0.1
 	volMinValue = SYSmax(volMinValue, 0.1);
 
     GEO_PrimVolume *vol;
-	const GEO_Primitive* maskPrim{ firstInput->findPrimitiveByName("mask") };
+	const GEO_Primitive* maskPrimtive{ firstInput->findPrimitiveByName("mask") };
 
-
-	if (maskPrim == nullptr)
+	if (maskPrimtive == nullptr)
 	{
 		return;
 	}
 	
-	if (maskPrim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
+	if (maskPrimtive->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
 	{
 
-		vol = ( GEO_PrimVolume *)maskPrim;
+		vol = ( GEO_PrimVolume *)maskPrimtive;
 		int resx, resy, resz;
 		UT_Vector3 p1, p2;
 		vol->getRes(resx, resy, resz);
@@ -153,6 +155,7 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	}
 	else
 	{
+		cookparms.sopAddWarning(SOP_MESSAGE, "This Node Must Have Mask Layer.");
 		return;
 	}
 
@@ -181,13 +184,13 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
     {
         detail->clearAndDestroy();
         detail->appendPointBlock(pointNumbers);
-        pointDistanceAttr = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale", 1); 
+        pointDistanceAttr = detail->addFloatTuple(GA_ATTRIB_POINT, "pscale"_sh, 1); 
         detail->bumpDataIdsForAddOrRemove(true, true, true);
 
     }else
     {
         detail->getP()->bumpDataId();
-        pointDistanceAttr = detail->findPointAttribute("pscale");
+        pointDistanceAttr = detail->findPointAttribute("pscale"_sh);
     }
 
     pscaleValueHandle.bind(pointDistanceAttr);
@@ -199,30 +202,8 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
         GA_Attribute* volumeAttribute;
     };
     
-    using VolumeDataArray = UT_Array<VolumeData> ;
+    using VolumeDataArray = UT_Array<VolumeData>;
     VolumeDataArray volDataArr;
-    //Set for all volume value
-
-//     auto primRange = firstInput->getPrimitiveRange();
-//     GA_Offset primStart;
-//     GA_Offset primEnd;
-//     GA_ROHandleS attribName(firstInput->findPrimitiveAttribute("name"));
-//     for (GA_Iterator it(primRange); it.blockAdvance(primStart, primEnd);) 
-//     {
-//         for (GA_Offset primPtoff = primStart; primPtoff < primEnd; ++primPtoff)
-//         {
-//             GEO_Primitive* prim = (GEO_Primitive*)firstInput->getPrimitiveByIndex(primPtoff);
-// 
-//             if(prim->getPrimitiveId() == GEO_PrimTypeCompat::GEOPRIMVOLUME)
-//             {
-//                 VolumeData volData;
-//                 volData.primVol = ( GEO_PrimVolume *)prim;
-//                 volData.name = attribName.get(prim->getMapOffset());
-//                 volData.volumeAttribute = detail->addFloatTuple(GA_ATTRIB_POINT, volData.name, 1); 
-//                 volDataArr.append(volData);
-//             }
-//         }
-//     }
 	
 	UT_Vector3 pointPosition = firstInput->getPos3(GA_Offset(0));
     detail->getP()->bumpDataId();
@@ -243,16 +224,6 @@ SOP_PoissionDiscSampleVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 
                 detail->setPos3(ptoff, pos );
                 pscaleValueHandle.set(ptoff, sampleList[ptoff].scale / densityMultiply);
-
-//                 GA_RWHandleF volValueHandle;
-//                 for(auto &volData : volDataArr)
-//                 {
-//                     volValueHandle.bind(volData.volumeAttribute);
-// 
-//                     float val = volData.primVol->getValue(samplePosition);
-//                     volValueHandle.set(ptoff, val);
-//                 }
-
             }
         }
     } 

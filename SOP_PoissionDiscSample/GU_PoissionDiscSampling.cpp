@@ -3,6 +3,25 @@
 #include "UT/UT_Math.h"
 #include "GEO/GEO_PrimVolume.h"
 
+struct GridTable
+{
+	UT_Array<UT_IntArray> data;
+	exint myWidth;
+	exint myHeight;
+
+	GridTable(exint w, exint h) : data(w*h, w*h), myWidth(w), myHeight(h)
+	{
+		
+	}
+
+	UT_IntArray& getByIndex(exint w, exint h)
+	{
+		exint idx = myWidth * h + w - 1 ;
+		return data[idx];
+	}
+
+};
+
 
 void PoissionDiscSample(UT_Array<SampleData>& sampleList, 
 	GEO_PrimVolume* maskVolume,
@@ -11,8 +30,8 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 {
     float cellSize  = maxSampleDist * densityMultiplu / sqrt(2) ;
 
-    exint gridwidth  {int(Width / cellSize) + 1} ;
-    exint gridheight {int(Height / cellSize) + 1} ;
+    exint gridwidth  {exint(Width / cellSize) + 1} ;
+    exint gridheight {exint(Height / cellSize) + 1} ;
 
     if(gridheight < 3 || gridwidth < 3)
     {
@@ -21,18 +40,14 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
 	exint sampleCounts {36};
  
-    GridArray grid;
-    grid.setSize(gridheight);
-    for(auto &gridx : grid)
-    {
-        gridx.setSize(gridwidth);
-    }
+    GridTable grid(gridwidth, gridheight);
+
 
 	UT_IntArray processList{};
-    processList.setCapacity(100);
-	uint initSeed1 = 1984 + randSeed;
-    uint initSeed2 = 1995 + randSeed;
-    UT_Vector2 firstPoint{ UTrandom(initSeed1) * Width, UTrandom(initSeed2) * Height };
+    processList.setCapacity(1000);
+	uint initSeed1 = 2165161 + randSeed;
+    uint initSeed2 = 161461615 + randSeed;
+    UT_Vector2 firstPoint{ SYSfastRandom(initSeed1) * Width, SYSfastRandom(initSeed2) * Height };
     UT_Vector3 samplePoint3(firstPoint[0], 0, firstPoint[1]);
 
 	float grey = maskVolume->getValue( samplePoint3 + offset);	
@@ -44,17 +59,25 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
     exint SamplelistIndex = sampleList.append(data);
     processList.append(SamplelistIndex);
 
-    grid[int(firstPoint[1] / cellSize)][int(firstPoint[0] / cellSize)].append(SamplelistIndex) ;
+	grid.getByIndex(exint(firstPoint[0] / cellSize), exint(firstPoint[1] / cellSize)).append(SamplelistIndex) ;
 
 	auto GeneratPoint = [](UT_Vector2& point, float mindist, int id) -> UT_Vector2
     {
-        uint i1 = point[0] * 1984 + 115 + id ;
-        uint i2 = point[1] * 2885 + 775 + id ;
-        float r1 { UTfastRandom(i1) };
-        float r2 { UTfastRandom(i2) };
+		UT_Vector2 randomPoint2 = point;
+		randomPoint2.x() += 153.5 + id;
+		randomPoint2.y() += 514648.87478 + id;
 
-        float radius {mindist * (r1 + 1) * 0.65f} ;
-        float angle  = 2 * 3.1415 * r2 ;
+		uint seed1 = SYSvector_hash(randomPoint2.data(), 2);
+
+		randomPoint2.x() += 216161.471 + id;
+		randomPoint2.y() += 16894148.87484 + id;
+		uint seed2 = SYSvector_hash(randomPoint2.data(), 2);
+        float r1 { SYSfastRandom(seed1) };
+        float r2 { SYSfastRandom(seed2) };
+
+        float radius {mindist * (r1 + 1) } ;
+		constexpr fpreal32 pi = 2 * 3.1415;
+        float angle  = pi * r2 ;
 
         float newX {point[0] + radius * cos(angle)};
         float newY {point[1] + radius * sin(angle)};
@@ -63,33 +86,29 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
     };
 
-    auto IsVaild = [ &Width, &Height, &gridwidth, &gridheight]( UT_Array<SampleData>& sampleList, GridArray& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
+    auto IsVaild = [ &Width, &Height, &gridwidth, &gridheight]( UT_Array<SampleData>& sampleList, GridTable& grid, UT_Vector2& point, float mindist, float cellSize) -> bool
     {
         if(point[0] > 0 && point[0] < Width && point[1] > 0 && point[1] < Height)
         {
-            exint indexWidth  = int(point[0] / cellSize );
-            exint indexHeight = int(point[1] / cellSize );
+            exint indexWidth  = exint(point[0] / cellSize );
+            exint indexHeight = exint(point[1] / cellSize );
 
             indexWidth  = UTclamp(int(indexWidth), 1, int(gridwidth - 2)) ;
             indexHeight  = UTclamp(int(indexHeight), 1, int(gridheight - 2)) ;
-            int index = -1;
-            for (int h = -1; h < 2; h++)
+            exint index = -1;
+            for (exint h = -1; h < 2; h++)
             {
-                for (int w = -1; w < 2; w++)
-                {
-                    auto& indexArr = grid[indexHeight + h][indexWidth+w] ;
-                    
-                    for(auto ptindex : indexArr)
+                for (exint w = -1; w < 2; w++)
+                {                    
+                    for(auto ptindex : grid.getByIndex(indexWidth+w, indexHeight + h))
                     {
-						if( point.distance( sampleList[ptindex].position ) < (0.75 * (mindist * 0.5 + sampleList[ptindex].scale * 0.5 )) )
+						if( point.distance( sampleList[ptindex].position ) <  (mindist * 0.5 + sampleList[ptindex].scale * 0.5 ) )
 						{
 							return false;
 						}
                     }
-                    
                 }
             }
-
             return true;
         }
         else
@@ -101,7 +120,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 	while ( !processList.isEmpty())
     {
 
-        int precessIndex { processList[processList.size() - 1] } ;
+        exint precessIndex { processList[processList.size() - 1] } ;
         processList.removeLast();
 		UT_Vector2 newPoint;
         for (size_t i = 0; i < sampleCounts; i++)
@@ -119,7 +138,7 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
 
                 SamplelistIndex = sampleList.append(data);
                 processList.append(SamplelistIndex);
-                grid[int(newPoint[1] / cellSize)][int(newPoint[0] / cellSize)].append(SamplelistIndex) ;
+				grid.getByIndex(exint(newPoint[0] / cellSize), exint(newPoint[1] / cellSize)).append(SamplelistIndex);
             }
         }
     }
