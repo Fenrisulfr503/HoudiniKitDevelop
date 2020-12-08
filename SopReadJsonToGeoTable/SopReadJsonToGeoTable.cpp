@@ -76,8 +76,8 @@ newSopOperator(OP_OperatorTable *table)
         "Sop ReadJsonToGeoTable",                     // UI name
         SopReadJsonToGeoTable::myConstructor,    // How to build the SOP
         SopReadJsonToGeoTable::buildTemplates(), // My parameters
-        0,                          // Min # of sources
-        0,                          // Max # of sources
+        1,                          // Min # of sources
+        1,                          // Max # of sources
         nullptr,                    // Custom local variables (none)
         OP_FLAG_GENERATOR));        // Flag it as generator
 }
@@ -199,17 +199,10 @@ SopReadJsonToGeoTableVerb::cook(const SOP_NodeVerb::CookParms &cookparms) const
 	exint assetNumbers = myAssetStaticMeshInfo.entries();
 
 	GA_Offset start_ptoff;
-	if (detail->getNumPoints() != assetNumbers)
-	{
-		detail->clearAndDestroy();
-		start_ptoff = detail->appendPointBlock(assetNumbers);
-		detail->bumpDataIdsForAddOrRemove(true, true, true);
-	}
-	else
-	{
-		start_ptoff = detail->pointOffset(GA_Index(0));
-		detail->getP()->bumpDataId();
-	}
+
+	detail->clearAndDestroy();
+	start_ptoff = detail->appendPointBlock(assetNumbers);
+	detail->bumpDataIdsForAddOrRemove(true, true, true);
 
 	//
 	UT_AutoInterrupt boss("ReBuilding JSON Object");

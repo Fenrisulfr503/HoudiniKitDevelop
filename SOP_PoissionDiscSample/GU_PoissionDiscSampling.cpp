@@ -38,10 +38,9 @@ void PoissionDiscSample(UT_Array<SampleData>& sampleList,
         return;
     }
 
-	exint sampleCounts {36};
+	exint sampleCounts = 36;
  
     GridTable grid(gridwidth, gridheight);
-
 
 	UT_IntArray processList{};
     processList.setCapacity(1000);
